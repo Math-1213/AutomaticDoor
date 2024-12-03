@@ -2,11 +2,11 @@
 Projeto de Microcontroladores
 
 Alunos:
-Matheus Felipe Prudente
-Symon Montavani
-Felipe Nakano
-Natalia de Oliveira
-Mariana Moreira
+Matheus Felipe Prudente,
+Symon Montavani,
+Felipe Nakano,
+Natalia de Oliveira,
+Mariana Moreira,
 
 Descrição do Projeto: O projeto automatizar duas portas, de forma que apenas pessoas autorizadas possam entrar.
 
