@@ -1,34 +1,22 @@
-#include <WiFi.h>
-#include <NTPClient.h>
-#include <WiFiUdp.h>
-#include <EEPROM.h>
+#include <SD.h>
+#include <SPI.h>
 #include <ESP32Servo.h>
 
-// Configurações da EEPROM
-#define EEPROM_SIZE 512     // Tamanho total reservado para a EEPROM
-#define LOG_ENTRY_SIZE 128  // Tamanho de cada entrada (em bytes)
-
-//Configuração da Wi-Fi
-const char* ssid = "SEU_SSID";     // Substitua pelo seu SSID
-const char* password = "SUA_SENHA"; // Substitua pela sua senha
-
-//Define os Pinos
-#define BUTTON_PIN_2 12     //TROCAR PELA TAG
-#define BUTTON_PIN_IN 13    //Botão Interno
-#define BUTTON_PIN_OUT 14   //Botão Externo
-#define BUZZER_PIN 2        //Buzzer
-#define LED_PIN 0           //LED
-#define SERVO_PIN_1 4       //Servo Interno
-#define SERVO_PIN_2 21      //Servo Externo
-#define ECHO_PIN 17         //Echo - Sensor de Presença
-#define TRIGGER_PIN 16      //Trig - Sensor de Presença
+// Define os Pinos
+#define SD_CS_PIN 27        // Pino CS do leitor SD
+#define BUTTON_PIN_2 12     // TROCAR PELA TAG
+#define BUTTON_PIN_IN 13    // Botão Interno
+#define BUTTON_PIN_OUT 14   // Botão Externo
+#define BUZZER_PIN 2        // Buzzer
+#define LED_PIN 0           // LED
+#define SERVO_PIN_1 4       // Servo Interno
+#define SERVO_PIN_2 21      // Servo Externo
+#define ECHO_PIN 17         // Echo - Sensor de Presença
+#define TRIGGER_PIN 16      // Trig - Sensor de Presença
 Servo servoIN;
 Servo servoOUT;
 
-// Definição da rede NTP
-WiFiUDP udp;
-NTPClient timeClient(udp, "pool.ntp.org", -3 * 3600, 60000);  // Fuso horário de Brasília (-3 horas)
-
+File logFile;
 
 // Classe Log
 class Log {
@@ -52,84 +40,77 @@ class Log {
       return Data + "/" + Login + "/" + String(Method) + "/" + AdditionalInfo;
     }
 
-    // Gravar log na EEPROM
-    void saveToEEPROM(int startAddress) {
-      String log = formatLog();
-      for (int i = 0; i < log.length() && (startAddress + i) < EEPROM_SIZE; i++) {
-        EEPROM.write(startAddress + i, log[i]);
+    // Gravar log no cartão SD
+    void saveToSD() {
+      if (logFile) {
+        logFile.println(formatLog());
+        logFile.flush();  // Garante que o log seja escrito imediatamente no cartão
       }
-      EEPROM.write(startAddress + log.length(), '\0'); // Finaliza com um terminador
-      EEPROM.commit();
     }
 
-    // Ler log da EEPROM
-    static String readFromEEPROM(int startAddress) {
-      char buffer[LOG_ENTRY_SIZE];
-      int i = 0;
-      while (i < LOG_ENTRY_SIZE - 1) {
-        char c = EEPROM.read(startAddress + i);
-        if (c == '\0') break;
-        buffer[i++] = c;
+    // Ler log do SD
+    static String readFromSD(File logFile) {
+      String log = "";
+      if (logFile.available()) {
+        log = logFile.readStringUntil('\n');
       }
-      buffer[i] = '\0';
-      return String(buffer);
+      return log;
     }
 };
 
-// Função para gerar a data e hora (placeholder)
+// Função para gerar a data e hora (simplificada, sem NTP)
 String getCurrentDateTime() {
-  timeClient.update();  // Atualiza a hora a partir do NTP
-  String formattedTime = timeClient.getFormattedTime();
-  return formattedTime;  // Retorna o horário no formato "HH:MM:SS"
+  unsigned long currentMillis = millis();
+  String formattedTime = String(currentMillis);  // Utiliza o tempo em milissegundos como "Data e Hora"
+  return formattedTime;  // Retorna o tempo em milissegundos como string
 }
 
 // Função para criar e registrar um log
 void createLogger(String login, String method, String additionalInfo) {
   // Criar o log
   Log log(getCurrentDateTime(), login, method, additionalInfo);
+  Serial.println(log);
 
-  // Encontrar o próximo endereço disponível na EEPROM --Excluir quando CartãoSD
-  static int currentAddress = 0; // Começa no início
-  if (currentAddress + LOG_ENTRY_SIZE > EEPROM_SIZE) {
-    currentAddress = 0; // Sobrescreve se atingir o limite
-  }
-
-  // Salvar o log na EEPROM --Substituir pelo CartãoSD
-  log.saveToEEPROM(currentAddress);
-  currentAddress += LOG_ENTRY_SIZE; // Atualiza o endereço
+  // Salvar o log no SD
+  log.saveToSD();
 }
 
-//Imprime a EEPROM no Monitor Serial
-void printEEPROM() {
-  Serial.println("Conteúdo da EEPROM:");
+// Função para inicializar o SD
+bool initializeSD() {
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println("Falha ao inicializar o cartão SD.");
+    return false;
+  }
+  return true;
+}
 
-  // Percorre a EEPROM e imprime os dados gravados
-  for (int i = 0; i < EEPROM_SIZE; i += LOG_ENTRY_SIZE) {
-    String log = Log::readFromEEPROM(i);
-    if (log != "") {
-      Serial.println(log);  // Imprime o log
+// Imprime o conteúdo do arquivo de logs
+void printSDLogs() {
+  if (logFile) {
+    while (logFile.available()) {
+      Serial.println(Log::readFromSD(logFile));
     }
   }
 }
 
-//Define as Funções
+// Define as Funções
 void Lights();
 void Doors();
 
 void setup() {
   Serial.begin(115200);
 
-  // Inicializar a EEPROM --Substituir pelo CartãoSD
-  if (!EEPROM.begin(EEPROM_SIZE)) {
-    Serial.println("Falha ao inicializar EEPROM!");
-    return;
+  // Tenta inicializar o cartão SD
+  bool sdInitialized = initializeSD();
+
+  if (sdInitialized) {
+    logFile = SD.open("/log.txt", FILE_WRITE);  // Abre o arquivo para escrever
+    if (!logFile) {
+      Serial.println("Falha ao abrir o arquivo de log!");
+    }
   }
-  printEEPROM();
 
-  // Inicializa o NTP
-  timeClient.begin();
-
-  //Define as Entradas e Saidas e coloca o buzzer e o led como desligado
+  // Define as Entradas e Saídas
   pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
   pinMode(BUTTON_PIN_2, INPUT_PULLUP);
   pinMode(BUTTON_PIN_OUT, INPUT_PULLUP);
@@ -151,17 +132,15 @@ void setup() {
   xTaskCreate(Doors, "DoorsTask", 1000, NULL, 1, NULL);
 }
 
-void loop() { 
-
-}
 void Lights(void *parameter) {
   // Variável de depuração
   bool debug = false;
 
   // Configurações
   int distanciaMinima = 60; // Distância mínima para acionar a luz
-  int luzTempo = 3000;      // Tempo que a luz ficará acesa após detectar presença (em ms)
+  int luzTempo = 30;      // Tempo que a luz ficará acesa após detectar presença (em ms)
   unsigned long luzUltimoAcionamento = 0;
+  unsigned long luzUltimoLog = 0; // Para garantir que o log não seja repetido
 
   while (true) {
     digitalWrite(TRIGGER_PIN, LOW);
@@ -186,7 +165,11 @@ void Lights(void *parameter) {
       digitalWrite(LED_PIN, HIGH); // Acende o LED
     } else {
       digitalWrite(LED_PIN, LOW); // Apaga o LED
-      createLogger("Snesor de Presença", "Sensor de Presença", "Luz Apagada");
+      // Verifica se já passou tempo suficiente para registrar o log
+      if (millis() - luzUltimoLog > 5000) { // Garante que o log só será registrado a cada 5 segundos
+        createLogger("Sensor de Presença", "Sensor de Presença", "Luz Apagada");
+        luzUltimoLog = millis(); // Atualiza o tempo do último log
+      }
     }
     vTaskDelay(100 / portTICK_PERIOD_MS); // Aguarda 100ms antes de verificar novamente
   }
@@ -247,26 +230,27 @@ void Doors(void *parameter) {
       }
     }
 
-    // Fecha a porta interna após o tempo configurado
-    if (isServoOpenIN && currentMillis >= servoCloseTimeIN) {
-      servoIN.write(0); // Fecha a porta
+    // Fecha a porta interna automaticamente após o tempo definido
+    if (isServoOpenIN && currentMillis > servoCloseTimeIN) {
+      servoIN.write(0);
       isServoOpenIN = false;
-
       if (debug) {
         Serial.println("Porta interna fechada.");
       }
     }
 
-    // Fecha a porta externa após o tempo configurado
-    if (isServoOpenOUT && currentMillis >= servoCloseTimeOUT) {
-      servoOUT.write(0); // Fecha a porta
+    // Fecha a porta externa automaticamente após o tempo definido
+    if (isServoOpenOUT && currentMillis > servoCloseTimeOUT) {
+      servoOUT.write(0);
       isServoOpenOUT = false;
-
       if (debug) {
         Serial.println("Porta externa fechada.");
       }
     }
-
     vTaskDelay(50 / portTICK_PERIOD_MS); // Aguarda 50ms antes de verificar novamente
   }
+}
+
+void loop() {
+  // Loop vazio - tasks são gerenciadas
 }
