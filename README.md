@@ -22,4 +22,4 @@ Materiais:
 
 Esse projeto foi feito para fims educativos, não sendo pensado para uma escala Real.
 
-Aplicativo de Controle: https://github.com/Math-1213/AutomaticDoorsAPK
+Aplicativo de Controle: https://github.com/Math-1213/AutomaticDoorsAPP
