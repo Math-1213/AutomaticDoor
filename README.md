@@ -18,6 +18,7 @@ Materiais:
 2x Servo Motor,
 1x Sensor Ultrasonico(4 Pinos),
 1x Leito de Tag (RFID) + TAGS,
+1x MicroSD Reader,
 1x Placa ESP32,
 
 Esse projeto foi feito para fims educativos, não sendo pensado para uma escala Real.
