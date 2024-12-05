@@ -148,6 +148,7 @@ void printEEPROMLogs() {
         Serial.println(log);
         address += log.length() + 1; // Avança para o próximo log
     }
+    Serial.println("Passou pela leitura");
 }
 
 // Define as Funções
@@ -176,9 +177,8 @@ void setup() {
     Serial.println("Falha ao Iniciar a EEPROM");
   }
 
-  if(WriteLogToSerial){
     printEEPROMLogs();
-  }
+  
   
   // Define as Entradas e Saídas
   pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
