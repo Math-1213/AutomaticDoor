@@ -1,6 +1,8 @@
 #include <SD.h>
 #include <SPI.h>
 #include <ESP32Servo.h>
+#include <EEPROM.h>
+
 
 // Define os Pinos
 #define SD_CS_PIN 15       // Pino CS do leitor SD
@@ -8,11 +10,11 @@
 #define BUTTON_PIN_IN 18   // Botão Interno-
 #define BUTTON_PIN_OUT 19  // Botão Externo-
 #define BUZZER_PIN 2       // Buzzer
-#define LED_PIN 32         // LED -
+#define LED_PIN 25         // LED -
 #define SERVO_PIN_1 4      // Servo Interno-
 #define SERVO_PIN_2 22     // Servo Externo-
 #define ECHO_PIN 5         // Echo - Sensor de Presença-
-#define TRIGGER_PIN 35     // Trig - Sensor de Presença-
+#define TRIGGER_PIN 26     // Trig - Sensor de Presença-
 Servo servoIN;
 Servo servoOUT;
 
@@ -40,6 +42,7 @@ class Log {
       return Data + "/" + Login + "/" + String(Method) + "/" + AdditionalInfo;
     }
 
+/*
     // Gravar log no cartão SD
     void saveToSD() {
       if (logFile) {
@@ -56,6 +59,37 @@ class Log {
       }
       return log;
     }
+    */
+
+     // Gravar log na EEPROM
+    void saveToEEPROM(int address) {
+        String log = formatLog();
+        int length = log.length();
+
+        if (length + 1 > 512 - address) {
+            Serial.println("EEPROM cheia ou endereço inválido.");
+            return;
+        }
+
+        for (int i = 0; i < length; i++) {
+            EEPROM.write(address + i, log[i]);
+        }
+        EEPROM.write(address + length, '\0'); // Finaliza com caractere nulo
+        EEPROM.commit(); // Grava na EEPROM fisicamente
+    }
+
+    // Ler log da EEPROM
+    static String readFromEEPROM(int address) {
+        String log = "";
+        for (int i = address; i < 512; i++) {
+            char c = EEPROM.read(i);
+            if (c == '\0') break; // Para ao encontrar o final da string
+            log += c;
+        }
+        return log;
+    }
+
+    
 };
 
 // Função para gerar a data e hora (simplificada, sem NTP)
@@ -72,7 +106,19 @@ void createLogger(String login, String method, String additionalInfo) {
   //Serial.println(log);
 
   // Salvar o log no SD
-  log.saveToSD();
+  //log.saveToSD();
+
+  //Salvar o log na EEPROM
+  
+    static int eepromAddress = 0; // Controle do endereço na EEPROM
+    log.saveToEEPROM(eepromAddress);
+
+    // Incrementa o endereço base para o próximo log, adicionando margem de segurança
+    eepromAddress += log.formatLog().length() + 1;
+    if (eepromAddress >= 512) { // Verifica limite da EEPROM
+        Serial.println("EEPROM cheia, sobrescrevendo do início.");
+        eepromAddress = 0; // Reinicia para o início
+    }
 }
 
 // Função para inicializar o SD
@@ -83,7 +129,7 @@ bool initializeSD() {
   }
   return true;
 }
-
+/*
 // Imprime o conteúdo do arquivo de logs
 void printSDLogs() {
   if (logFile) {
@@ -92,6 +138,17 @@ void printSDLogs() {
     }
   }
 }
+*/
+
+void printEEPROMLogs() {
+    int address = 0;
+    while (address < 512) {
+        String log = Log::readFromEEPROM(address);
+        if (log.length() == 0) break; // Para ao encontrar o final
+        Serial.println(log);
+        address += log.length() + 1; // Avança para o próximo log
+    }
+}
 
 // Define as Funções
 void Lights();
@@ -99,6 +156,7 @@ void Doors();
 
 void setup() {
   Serial.begin(115200);
+  bool WriteLogToSerial = true;
 /*
   // Tenta inicializar o cartão SD
   bool sdInitialized = initializeSD();
@@ -110,6 +168,18 @@ void setup() {
     }
   }
 */
+
+  //Tenta Inicializar a EEPROM
+  if(EEPROM.begin(512)){
+    Serial.println("EEPROM Inicializada");
+  } else {
+    Serial.println("Falha ao Iniciar a EEPROM");
+  }
+
+  if(WriteLogToSerial){
+    printEEPROMLogs();
+  }
+  
   // Define as Entradas e Saídas
   pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
   pinMode(BUTTON_PIN_2, INPUT_PULLUP);
@@ -128,13 +198,13 @@ void setup() {
   servoOUT.write(0);  // Porta Externa fechada
 
   // Cria as tasks
-  xTaskCreate(Lights, "LightsTask", 1000, NULL, 1, NULL);
+  xTaskCreate(Lights, "LightsTask", 2048, NULL, 1, NULL);
   xTaskCreate(Doors, "DoorsTask", 1000, NULL, 1, NULL);
 }
 
 void Lights(void *parameter) {
   // Variável de depuração
-  bool debug = false;
+  bool debug = true;
 
   // Configurações
   int distanciaMinima = 30; // Distância mínima para acionar a luz
