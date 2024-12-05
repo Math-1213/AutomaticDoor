@@ -13,14 +13,6 @@
       "attrs": { "color": "cyan" }
     },
     {
-      "type": "wokwi-pushbutton",
-      "id": "btn2",
-      "top": 268.9,
-      "left": 812.7,
-      "rotate": 270,
-      "attrs": { "color": "green" }
-    },
-    {
       "type": "wokwi-resistor",
       "id": "r1",
       "top": 273.6,
@@ -59,7 +51,8 @@
       "left": 860.7,
       "rotate": 270,
       "attrs": { "color": "blue" }
-    }
+    },
+    { "type": "wokwi-microsd-card", "id": "sd1", "top": 86.63, "left": 38.47, "attrs": {} }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
@@ -75,7 +68,6 @@
     [ "bb1:29t.e", "bb1:29b.f", "red", [ "v0" ] ],
     [ "bb1:29b.j", "bb1:bp.23", "red", [ "v0" ] ],
     [ "servo2:V+", "bb1:tp.1", "red", [ "h-38.4", "v0.1" ] ],
-    [ "bb1:tp.2", "servo2:GND", "black", [ "v-47.7", "h-0.8" ] ],
     [ "bb1:bn.2", "servo1:GND", "black", [ "v0" ] ],
     [ "bb1:bp.3", "servo1:V+", "red", [ "v0" ] ],
     [ "servo1:PWM", "bb1:7b.j", "green", [ "h-19.2", "v0.2" ] ],
@@ -86,18 +78,10 @@
     [ "esp:17", "bb1:31t.e", "green", [ "h0" ] ],
     [ "bb1:41t.e", "esp:0", "green", [ "v0" ] ],
     [ "bb1:45t.e", "esp:2", "green", [ "v0" ] ],
-    [ "esp:13", "bb1:50b.j", "green", [ "h-19.05", "v86.4", "h614.4", "v-86.4" ] ],
-    [ "bb1:55b.j", "esp:12", "green", [ "v76.8", "h-672", "v-96" ] ],
-    [ "esp:14", "bb1:60b.j", "green", [ "h-38.25", "v105.6", "h729.6" ] ],
     [ "bb1:62t.a", "bb1:tn.49", "black", [ "v0" ] ],
-    [ "bb1:57t.a", "bb1:tn.46", "black", [ "v0" ] ],
     [ "bb1:52t.a", "bb1:tn.42", "black", [ "v0" ] ],
     [ "led1:A", "bb1:41t.a", "", [ "$bb" ] ],
     [ "led1:C", "bb1:40t.a", "", [ "$bb" ] ],
-    [ "btn2:1.l", "bb1:55b.i", "", [ "$bb" ] ],
-    [ "btn2:2.l", "bb1:57b.i", "", [ "$bb" ] ],
-    [ "btn2:1.r", "bb1:55t.d", "", [ "$bb" ] ],
-    [ "btn2:2.r", "bb1:57t.d", "", [ "$bb" ] ],
     [ "r1:1", "bb1:40t.c", "", [ "$bb" ] ],
     [ "r1:2", "bb1:40b.g", "", [ "$bb" ] ],
     [ "ultrasonic1:VCC", "bb1:29t.a", "", [ "$bb" ] ],
@@ -113,7 +97,16 @@
     [ "btn3:1.l", "bb1:60b.i", "", [ "$bb" ] ],
     [ "btn3:2.l", "bb1:62b.i", "", [ "$bb" ] ],
     [ "btn3:1.r", "bb1:60t.d", "", [ "$bb" ] ],
-    [ "btn3:2.r", "bb1:62t.d", "", [ "$bb" ] ]
+    [ "btn3:2.r", "bb1:62t.d", "", [ "$bb" ] ],
+    [ "sd1:VCC", "bb1:tp.3", "red", [ "h0" ] ],
+    [ "bb1:tn.2", "servo2:GND", "black", [ "v0" ] ],
+    [ "sd1:GND", "bb1:tn.4", "black", [ "h0" ] ],
+    [ "bb1:50b.j", "esp:18", "green", [ "v9.6", "h-480", "v9.6" ] ],
+    [ "esp:19", "bb1:60b.j", "green", [ "h9.6", "v144", "h518.4" ] ],
+    [ "sd1:DI", "esp:13", "orange", [ "h9.6", "v191.91" ] ],
+    [ "esp:12", "sd1:DO", "orange", [ "h-57.45", "v-211.31" ] ],
+    [ "esp:14", "sd1:SCK", "orange", [ "h-47.85", "v-182.39" ] ],
+    [ "sd1:CS", "esp:15", "gold", [ "v268.86", "h201.6", "v-76.8" ] ]
   ],
   "dependencies": {}
 }
