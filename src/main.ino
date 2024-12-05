@@ -3,16 +3,16 @@
 #include <ESP32Servo.h>
 
 // Define os Pinos
-#define SD_CS_PIN 15        // Pino CS do leitor SD
-#define BUTTON_PIN_2 20     // TROCAR PELA TAG
-#define BUTTON_PIN_IN 18    // Botão Interno
-#define BUTTON_PIN_OUT 19   // Botão Externo
-#define BUZZER_PIN 2        // Buzzer
-#define LED_PIN 19          // LED 
-#define SERVO_PIN_1 4       // Servo Interno
-#define SERVO_PIN_2 21      // Servo Externo
-#define ECHO_PIN 5          // Echo - Sensor de Presença
-#define TRIGGER_PIN 18      // Trig - Sensor de Presença
+#define SD_CS_PIN 15       // Pino CS do leitor SD
+#define BUTTON_PIN_2 23    // TROCAR PELA TAG
+#define BUTTON_PIN_IN 18   // Botão Interno-
+#define BUTTON_PIN_OUT 19  // Botão Externo-
+#define BUZZER_PIN 2       // Buzzer
+#define LED_PIN 32         // LED -
+#define SERVO_PIN_1 4      // Servo Interno-
+#define SERVO_PIN_2 22     // Servo Externo-
+#define ECHO_PIN 5         // Echo - Sensor de Presença-
+#define TRIGGER_PIN 35     // Trig - Sensor de Presença-
 Servo servoIN;
 Servo servoOUT;
 
@@ -69,7 +69,7 @@ String getCurrentDateTime() {
 void createLogger(String login, String method, String additionalInfo) {
   // Criar o log
   Log log(getCurrentDateTime(), login, method, additionalInfo);
-  Serial.println(log);
+  //Serial.println(log);
 
   // Salvar o log no SD
   log.saveToSD();
@@ -99,7 +99,7 @@ void Doors();
 
 void setup() {
   Serial.begin(115200);
-
+/*
   // Tenta inicializar o cartão SD
   bool sdInitialized = initializeSD();
 
@@ -109,7 +109,7 @@ void setup() {
       Serial.println("Falha ao abrir o arquivo de log!");
     }
   }
-
+*/
   // Define as Entradas e Saídas
   pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
   pinMode(BUTTON_PIN_2, INPUT_PULLUP);
@@ -137,8 +137,8 @@ void Lights(void *parameter) {
   bool debug = false;
 
   // Configurações
-  int distanciaMinima = 60; // Distância mínima para acionar a luz
-  int luzTempo = 30;      // Tempo que a luz ficará acesa após detectar presença (em ms)
+  int distanciaMinima = 30; // Distância mínima para acionar a luz
+  int luzTempo = 3000;      // Tempo que a luz ficará acesa após detectar presença (em ms)
   unsigned long luzUltimoAcionamento = 0;
   unsigned long luzUltimoLog = 0; // Para garantir que o log não seja repetido
 
@@ -177,7 +177,7 @@ void Lights(void *parameter) {
 
 void Doors(void *parameter) {
   // Variável de depuração
-  bool debug = false;
+  bool debug = true;
 
   // Configurações
   int tempo = 3000;                    // Tempo de abertura das portas
@@ -188,6 +188,7 @@ void Doors(void *parameter) {
   unsigned long lastPressOUT = 0;
   unsigned long servoCloseTimeIN = 0;
   unsigned long servoCloseTimeOUT = 0;
+  bool isExtLast = false;
   bool isServoOpenIN = false;
   bool isServoOpenOUT = false;
 
@@ -197,7 +198,7 @@ void Doors(void *parameter) {
     // Verifica se o botão interno foi pressionado
     if (digitalRead(BUTTON_PIN_IN) == LOW && currentMillis - lastPressIN > debounceDelay) {
       lastPressIN = currentMillis; // Atualiza o tempo do último evento
-
+  
       if (debug) {
         Serial.println("Botão interno pressionado.");
       }
@@ -206,6 +207,7 @@ void Doors(void *parameter) {
       servoIN.write(90);
       isServoOpenIN = true;
       servoCloseTimeIN = currentMillis + tempo; // Define o tempo para fechar a porta
+      isExtLast = true;
 
       if (debug) {
         Serial.println("Porta interna aberta.");
@@ -224,7 +226,8 @@ void Doors(void *parameter) {
       servoOUT.write(90);
       isServoOpenOUT = true;
       servoCloseTimeOUT = currentMillis + tempo; // Define o tempo para fechar a porta
-
+      isExtLast = false;
+      
       if (debug) {
         Serial.println("Porta externa aberta.");
       }
@@ -245,6 +248,31 @@ void Doors(void *parameter) {
       isServoOpenOUT = false;
       if (debug) {
         Serial.println("Porta externa fechada.");
+      }
+    }
+
+   //Porta Tag
+  //TO DO TAG
+  if (digitalRead(BUTTON_PIN_2) == LOW && currentMillis - lastPressOUT > debounceDelay){
+    if (debug) {
+        Serial.println("TAG Reconhecida");
+      }
+    if(isExtLast){
+      servoOUT.write(90);
+      isServoOpenOUT = true;
+      servoCloseTimeOUT = currentMillis + tempo; // Define o tempo para fechar a porta
+
+      if (debug) {
+        Serial.println("Porta interna aberta.");
+      }
+    } else {
+      servoIN.write(90);
+      isServoOpenIN = true;
+      servoCloseTimeIN = currentMillis + tempo; // Define o tempo para fechar a porta
+
+        if (debug) {
+          Serial.println("Porta interna aberta.");
+        }
       }
     }
     vTaskDelay(50 / portTICK_PERIOD_MS); // Aguarda 50ms antes de verificar novamente
