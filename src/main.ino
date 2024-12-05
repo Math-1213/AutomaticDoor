@@ -3,15 +3,15 @@
 #include <ESP32Servo.h>
 
 // Define os Pinos
-#define SD_CS_PIN 27        // Pino CS do leitor SD
-#define BUTTON_PIN_2 12     // TROCAR PELA TAG
-#define BUTTON_PIN_IN 13    // Botão Interno
-#define BUTTON_PIN_OUT 14   // Botão Externo
+#define SD_CS_PIN 15        // Pino CS do leitor SD
+#define BUTTON_PIN_2 20     // TROCAR PELA TAG
+#define BUTTON_PIN_IN 18    // Botão Interno
+#define BUTTON_PIN_OUT 19   // Botão Externo
 #define BUZZER_PIN 2        // Buzzer
-#define LED_PIN 19           // LED 
+#define LED_PIN 19          // LED 
 #define SERVO_PIN_1 4       // Servo Interno
 #define SERVO_PIN_2 21      // Servo Externo
-#define ECHO_PIN 5         // Echo - Sensor de Presença
+#define ECHO_PIN 5          // Echo - Sensor de Presença
 #define TRIGGER_PIN 18      // Trig - Sensor de Presença
 Servo servoIN;
 Servo servoOUT;
