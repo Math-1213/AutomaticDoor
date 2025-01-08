@@ -1,24 +1,57 @@
-#include <SD.h>
-#include <SPI.h>
-#include <ESP32Servo.h>
-#include <EEPROM.h>
+#include <SD.h>           //Interage com o Cartão SD
+#include <SPI.h>          //Intergae com dispositivos SPI
+#include <ESP32Servo.h>   //Controla os Servos
+#include <WiFi.h>         //Permite Conexão WIFI
+#include <HTTPClient.h>   //Permite Requisições HTTP
+#include <PubSubClient.h> //Permite Requisições MQTT
+#include <ArduinoJson.h>  // Para parsear o JSON
 
+// ---------------- Define os Pinos ---------------- //
 
-// Define os Pinos
-#define SD_CS_PIN 15       // Pino CS do leitor SD
-#define BUTTON_PIN_2 23    // TROCAR PELA TAG
-#define BUTTON_PIN_IN 18   // Botão Interno-
-#define BUTTON_PIN_OUT 19  // Botão Externo-
+//Pinos SD Card Reader
+#define SD_CS_PIN 15      // Pino CS (Chip Select) do cartão SD
+
+//Pinos RFID
+#define RFID_CS_PIN 5     // Pino CS (Chip Select) para o RFID
+#define RFID_RST_PIN 22   // Pino RST (Reset) para o RFID
+
+//Podemos compartilhar os pinos MOSI, MISO, e SCK entre os dispositivos (SD e RFID)
+//Pinos Comuns RFID e SD
+#define MOSI_PIN 23      // Pino MOSI (Master Out Slave In)
+#define MISO_PIN 19      // Pino MISO (Master In Slave Out)
+#define SCK_PIN 18       // Pino SCK (Clock)
+
+//Outros Pinos
+#define BUTTON_PIN_2 32    // TROCAR PELA TAG
+#define BUTTON_PIN_IN 22   // Botão Interno
+#define BUTTON_PIN_OUT 33  // Botão Externo
 #define BUZZER_PIN 2       // Buzzer
-#define LED_PIN 25         // LED -
-#define SERVO_PIN_1 4      // Servo Interno-
-#define SERVO_PIN_2 22     // Servo Externo-
-#define ECHO_PIN 5         // Echo - Sensor de Presença-
-#define TRIGGER_PIN 26     // Trig - Sensor de Presença-
+#define LED_PIN 25         // LED 
+#define SERVO_PIN_1 4      // Servo Interno
+#define SERVO_PIN_2 21     // Servo Externo
+#define ECHO_PIN 5         // Echo - Sensor de Presença
+#define TRIGGER_PIN 26     // Trig - Sensor de Presença
+
+//Objetos
 Servo servoIN;
 Servo servoOUT;
-
 File logFile;
+
+// Configuração Wi-Fi
+const char* ssid = "nome da rede";
+const char* password = "senha da rede";
+
+// Configuração MQTT
+const char* mqtt_server = "mqtt://broker.mqtt.com";  // Endereço do broker MQTT
+const int mqtt_port = 1883;                          // Porta MQTT
+const char* mqtt_user = "usuario";                   // Usuário (se necessário)
+const char* mqtt_password = "senha";                 // Senha (se necessário)
+const char* mqtt_topic = "test/topic";               // Tópico MQTT
+
+WiFiClient espClient;   // Cliente Wi-Fi para o MQTT
+PubSubClient mqttClient(espClient);  // Cliente MQTT
+
+// ------------ Classe LOG ------------ //
 
 // Classe Log
 class Log {
@@ -42,83 +75,87 @@ class Log {
       return Data + "/" + Login + "/" + String(Method) + "/" + AdditionalInfo;
     }
 
-/*
-    // Gravar log no cartão SD
+    // ---------------- Funções para o SD Card ---------------- //
+
+    // Gravar log no SD Card
     void saveToSD() {
-      if (logFile) {
-        logFile.println(formatLog());
-        logFile.flush();  // Garante que o log seja escrito imediatamente no cartão
-      }
-    }
-
-    // Ler log do SD
-    static String readFromSD(File logFile) {
-      String log = "";
-      if (logFile.available()) {
-        log = logFile.readStringUntil('\n');
-      }
-      return log;
-    }
-    */
-
-     // Gravar log na EEPROM
-    void saveToEEPROM(int address) {
         String log = formatLog();
-        int length = log.length();
-
-        if (length + 1 > 512 - address) {
-            Serial.println("EEPROM cheia ou endereço inválido.");
+        File logFile = SD.open("/log.txt", FILE_WRITE); // Abre o arquivo para escrita
+        if (!logFile) {
+            Serial.println("Falha ao abrir o arquivo para gravação!");
             return;
         }
 
-        for (int i = 0; i < length; i++) {
-            EEPROM.write(address + i, log[i]);
-        }
-        EEPROM.write(address + length, '\0'); // Finaliza com caractere nulo
-        EEPROM.commit(); // Grava na EEPROM fisicamente
+        // Escreve o log no arquivo
+        logFile.println(log);
+        logFile.close(); // Fecha o arquivo
+        Serial.println("Log gravado no SD Card.");
     }
 
-    // Ler log da EEPROM
-    static String readFromEEPROM(int address) {
+    // Ler log do SD Card
+    static String readFromSD() {
         String log = "";
-        for (int i = address; i < 512; i++) {
-            char c = EEPROM.read(i);
-            if (c == '\0') break; // Para ao encontrar o final da string
-            log += c;
+        File logFile = SD.open("/log.txt", FILE_READ); // Abre o arquivo para leitura
+        if (!logFile) {
+            Serial.println("Falha ao abrir o arquivo para leitura!");
+            return "";
         }
+
+        // Lê o conteúdo do arquivo
+        while (logFile.available()) {
+            log += (char)logFile.read();
+        }
+        logFile.close(); // Fecha o arquivo
         return log;
     }
-
-    
 };
 
-// Função para gerar a data e hora (simplificada, sem NTP)
+// Função para gerar a data e hora a partir de uma requisição HTTP
 String getCurrentDateTime() {
-  unsigned long currentMillis = millis();
-  String formattedTime = String(currentMillis);  // Utiliza o tempo em milissegundos como "Data e Hora"
-  return formattedTime;  // Retorna o tempo em milissegundos como string
+  // URL para pegar a data e hora de São Paulo (fuso horário: America/Sao_Paulo)
+  String url = "http://worldtimeapi.org/api/timezone/America/Sao_Paulo";
+
+  // Realiza a requisição HTTP
+  HTTPClient http;
+  http.begin(url);
+  int httpResponseCode = http.GET();
+
+  String formattedTime = "Erro ao obter hora";  // Valor padrão caso a requisição falhe
+
+  if (httpResponseCode == 200) {  // Se a resposta for bem-sucedida
+    String payload = http.getString();  // Pega o corpo da resposta
+
+    // Parseia o JSON retornado
+    StaticJsonDocument<512> doc;
+    deserializeJson(doc, payload);
+
+    // Extrai as informações de data e hora
+    String dateTime = doc["datetime"];  // Exemplo: "2025-01-07T10:45:32.123456-03:00"
+
+    // Extrai a parte da data (YYYY-MM-DD) e da hora (HH:MM:SS)
+    String date = dateTime.substring(0, 10);  // "2025-01-07"
+    String time = dateTime.substring(11, 19); // "10:45:32"
+
+    // Formata a data para o formato DIA/MES/ANO
+    String day = date.substring(8, 10);   // "07"
+    String month = date.substring(5, 7);  // "01"
+    String year = date.substring(0, 4);   // "2025"
+
+    // Concatena para a string final
+    formattedTime = day + "/" + month + "/" + year + " " + time;
+  }
+
+  http.end();  // Finaliza a requisição HTTP
+  return formattedTime;  // Retorna a data e hora formatada
 }
 
 // Função para criar e registrar um log
 void createLogger(String login, String method, String additionalInfo) {
   // Criar o log
   Log log(getCurrentDateTime(), login, method, additionalInfo);
-  //Serial.println(log);
-
-  // Salvar o log no SD
-  //log.saveToSD();
-
-  //Salvar o log na EEPROM
   
-    static int eepromAddress = 0; // Controle do endereço na EEPROM
-    log.saveToEEPROM(eepromAddress);
-
-    // Incrementa o endereço base para o próximo log, adicionando margem de segurança
-    eepromAddress += log.formatLog().length() + 1;
-    if (eepromAddress >= 512) { // Verifica limite da EEPROM
-        Serial.println("EEPROM cheia, sobrescrevendo do início.");
-        eepromAddress = 0; // Reinicia para o início
-    }
+  // Salvar o log no SD
+  log.saveToSD();  // Grava no SD Card
 }
 
 // Função para inicializar o SD
@@ -129,77 +166,113 @@ bool initializeSD() {
   }
   return true;
 }
-/*
-// Imprime o conteúdo do arquivo de logs
+
 void printSDLogs() {
-  if (logFile) {
-    while (logFile.available()) {
-      Serial.println(Log::readFromSD(logFile));
+    String logs = Log::readFromSD();
+    if (logs.length() > 0) {
+        Serial.println(logs);
+    } else {
+        Serial.println("Nenhum log encontrado.");
+    }
+}
+
+void setupWiFi() {
+  Serial.print("Conectando-se à rede Wi-Fi");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+  Serial.println("Conectado ao Wi-Fi!");
+}
+
+void setupMQTT() {
+  mqttClient.setServer(mqtt_server, mqtt_port);
+  mqttClient.setCallback(mqttCallback);
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Mensagem recebida no tópico: ");
+  Serial.print(topic);
+  Serial.print(": ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
+void reconnectMQTT() {
+  while (!mqttClient.connected()) {
+    Serial.print("Tentando conexão MQTT...");
+    if (mqttClient.connect("ESP32Client", mqtt_user, mqtt_password)) {
+      Serial.println("Conectado ao MQTT!");
+      mqttClient.subscribe(mqtt_topic);
+    } else {
+      Serial.print("Falha, rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(" Tentando novamente em 5 segundos.");
+      delay(5000);
     }
   }
 }
-*/
 
-void printEEPROMLogs() {
-    int address = 0;
-    while (address < 512) {
-        String log = Log::readFromEEPROM(address);
-        if (log.length() == 0) break; // Para ao encontrar o final
-        Serial.println(log);
-        address += log.length() + 1; // Avança para o próximo log
-    }
-    Serial.println("Passou pela leitura");
-}
 
 // Define as Funções
 void Lights();
 void Doors();
 
 void setup() {
-  Serial.begin(115200);
-  bool WriteLogToSerial = true;
-/*
-  // Tenta inicializar o cartão SD
-  bool sdInitialized = initializeSD();
+  // Inicializa o Serial
+    Serial.begin(115200);
 
-  if (sdInitialized) {
-    logFile = SD.open("/log.txt", FILE_WRITE);  // Abre o arquivo para escrever
-    if (!logFile) {
-      Serial.println("Falha ao abrir o arquivo de log!");
+    // Inicializa o SD Card
+    if (!initializeSD()) {
+        return;
     }
+    Serial.println("SD Card inicializado.");
+
+  WiFi.begin(ssid, password);  // Conecta à rede Wi-Fi
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
   }
-*/
 
-  //Tenta Inicializar a EEPROM
-  if(EEPROM.begin(512)){
-    Serial.println("EEPROM Inicializada");
-  } else {
-    Serial.println("Falha ao Iniciar a EEPROM");
-  }
+  Serial.println("Conectado ao Wi-Fi!");
 
-    printEEPROMLogs();
-  
-  
-  // Define as Entradas e Saídas
-  pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
-  pinMode(BUTTON_PIN_2, INPUT_PULLUP);
-  pinMode(BUTTON_PIN_OUT, INPUT_PULLUP);
-  pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
-  pinMode(TRIGGER_PIN, OUTPUT);
-  
-  servoIN.attach(SERVO_PIN_1);
-  servoOUT.attach(SERVO_PIN_2);
-  
-  digitalWrite(BUZZER_PIN, LOW);  // Buzzer off
-  digitalWrite(LED_PIN, LOW);     // LED off
-  servoIN.write(0);  // Porta interna fechada
-  servoOUT.write(0);  // Porta Externa fechada
+  // Testa a função de obter a data e hora
+  String currentDateTime = getCurrentDateTime();
+  Serial.println("Data e Hora Atual: " + currentDateTime);
 
-  // Cria as tasks
-  xTaskCreate(Lights, "LightsTask", 2048, NULL, 1, NULL);
-  xTaskCreate(Doors, "DoorsTask", 1000, NULL, 1, NULL);
+    // Inicializa outros dispositivos (RFID, Servo, etc.)
+    SPI.begin(); // Inicia o barramento SPI
+    rfid.PCD_Init(); // Inicializa o MFRC522
+    Serial.println("Leitor RFID pronto.");
+    
+    // Inicializa outros componentes, como os servos
+    servoIN.attach(SERVO_PIN_1);
+    servoOUT.attach(SERVO_PIN_2);
+
+    // Define as Entradas e Saídas
+    pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_2, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_OUT, INPUT_PULLUP);
+    pinMode(BUZZER_PIN, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+    pinMode(TRIGGER_PIN, OUTPUT);
+  
+    servoIN.attach(SERVO_PIN_1);
+    servoOUT.attach(SERVO_PIN_2);
+  
+    digitalWrite(BUZZER_PIN, LOW);  // Buzzer off
+    digitalWrite(LED_PIN, LOW);     // LED off
+    servoIN.write(0);  // Porta interna fechada
+    servoOUT.write(0);  // Porta Externa fechada
+
+    // Cria as tasks
+    xTaskCreate(Lights, "LightsTask", 2048, NULL, 1, NULL);
+    xTaskCreate(Doors, "DoorsTask", 1000, NULL, 1, NULL);
 }
 
 void Lights(void *parameter) {
@@ -321,7 +394,7 @@ void Doors(void *parameter) {
       }
     }
 
-   //Porta Tag
+  //Porta Tag
   //TO DO TAG
   if (digitalRead(BUTTON_PIN_2) == LOW && currentMillis - lastPressOUT > debounceDelay){
     if (debug) {
@@ -350,5 +423,5 @@ void Doors(void *parameter) {
 }
 
 void loop() {
-  // Loop vazio - tasks são gerenciadas
+  //LOOP VAZIO :)
 }
