@@ -323,7 +323,7 @@ void Doors(void *parameter) {
   bool debug = true;
 
   // Configurações
-  int tempo = 3000;                    // Tempo de abertura das portas
+  int tempo = 3000;                        // Tempo de abertura das portas
   const unsigned long debounceDelay = 200; // 200ms para debounce
 
   // Variáveis de controle
