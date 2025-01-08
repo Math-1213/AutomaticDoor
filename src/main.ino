@@ -28,7 +28,7 @@
 #define LED_PIN 25         // LED 
 #define SERVO_PIN_1 4      // Servo Interno
 #define SERVO_PIN_2 21     // Servo Externo
-#define ECHO_PIN 5         // Echo - Sensor de Presença
+#define ECHO_PIN 35         // Echo - Sensor de Presença
 #define TRIGGER_PIN 26     // Trig - Sensor de Presença
 
 //Objetos e variaveis globais
