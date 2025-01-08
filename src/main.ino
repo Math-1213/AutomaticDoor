@@ -32,10 +32,12 @@
 #define ECHO_PIN 5         // Echo - Sensor de Presença
 #define TRIGGER_PIN 26     // Trig - Sensor de Presença
 
-//Objetos
+//Objetos e variaveis globais
 Servo servoIN;
 Servo servoOUT;
 File logFile;
+bool isTagRegistrationMode = false; // Controle do modo de cadastro de tag
+String currentTag = "";             // Tag atual sendo lida ou cadastrada
 
 // Configuração Wi-Fi
 const char* ssid = "nome da rede";
@@ -192,25 +194,54 @@ void setupMQTT() {
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Mensagem recebida no tópico: ");
-  Serial.print(topic);
-  Serial.print(": ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+  bool debug = false;
+  String msg = "";
+  for (unsigned int i = 0; i < length; i++) {
+    msg += (char)payload[i];
   }
-  Serial.println();
+  // Verifica o tópico e processa a mensagem
+  if (topic == "home/doors/openIN" && msg == "1") {
+    // Abrir a porta interna via MQTT
+    openInternalDoor();
+  } else if (topic == "home/doors/openOUT" && msg == "1") {
+    // Abrir a porta externa via MQTT
+    openExternalDoor();
+  } else if (topic == "home/doors/closeIN" && msg == "1") {
+    // Fechar a porta interna via MQTT
+    closeInternalDoor();
+  } else if (topic == "home/doors/closeOUT" && msg == "1") {
+    // Fechar a porta externa via MQTT
+    closeExternalDoor();
+  } else if (topic == "home/doors/registerTag" && msg == "1") {
+    // Ativar o modo de cadastro de tag
+    isTagRegistrationMode = true;
+    if (debug) {
+      Serial.println("Modo de cadastro de tag ativado.");
+    }
+  } else if (topic == "home/doors/stopRegisterTag" && msg == "1") {
+    // Desativar o modo de cadastro de tag
+    isTagRegistrationMode = false;
+    if (debug) {
+      Serial.println("Modo de cadastro de tag desativado.");
+    }
+  }
 }
 
 void reconnectMQTT() {
+  bool debug = false;
   while (!mqttClient.connected()) {
-    Serial.print("Tentando conexão MQTT...");
-    if (mqttClient.connect("ESP32Client", mqtt_user, mqtt_password)) {
-      Serial.println("Conectado ao MQTT!");
-      mqttClient.subscribe(mqtt_topic);
+    if (mqttClient.connect("EspClient")) {
+      mqttClient.subscribe("home/doors/openIN");
+      mqttClient.subscribe("home/doors/openOUT");
+      mqttClient.subscribe("home/doors/registerTag");
+      mqttClient.subscribe("home/doors/stopRegisterTag");
+      if (debug) {
+        Serial.println("Conectado ao broker MQTT.");
+      }
     } else {
-      Serial.print("Falha, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" Tentando novamente em 5 segundos.");
+      if (debug) {
+        Serial.print("Falha na conexão MQTT, tentando novamente...");
+      }
       delay(5000);
     }
   }
@@ -253,6 +284,11 @@ void setup() {
     servoIN.attach(SERVO_PIN_1);
     servoOUT.attach(SERVO_PIN_2);
 
+    // Configuração do MQTT
+    mqttClient.setServer(MQTT_BROKER, 1883);
+    mqttClient.setCallback(mqttCallback);
+
+
     // Define as Entradas e Saídas
     pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
     pinMode(BUTTON_PIN_2, INPUT_PULLUP);
@@ -270,6 +306,11 @@ void setup() {
     servoIN.write(0);  // Porta interna fechada
     servoOUT.write(0);  // Porta Externa fechada
 
+  // Conecta-se ao MQTT
+  while (!mqttClient.connected()) {
+    reconnectMQTT();
+  }
+  mqttClient.loop();
     // Cria as tasks
     xTaskCreate(Lights, "LightsTask", 2048, NULL, 1, NULL);
     xTaskCreate(Doors, "DoorsTask", 1000, NULL, 1, NULL);
@@ -323,7 +364,7 @@ void Doors(void *parameter) {
   bool debug = true;
 
   // Configurações
-  int tempo = 3000;                        // Tempo de abertura das portas
+  int tempo = 3000;                    // Tempo de abertura das portas
   const unsigned long debounceDelay = 200; // 200ms para debounce
 
   // Variáveis de controle
@@ -339,89 +380,129 @@ void Doors(void *parameter) {
     unsigned long currentMillis = millis();
 
     // Verifica se o botão interno foi pressionado
-    if (digitalRead(BUTTON_PIN_IN) == LOW && currentMillis - lastPressIN > debounceDelay) {
-      lastPressIN = currentMillis; // Atualiza o tempo do último evento
-  
-      if (debug) {
-        Serial.println("Botão interno pressionado.");
-      }
-
-      // Abre a porta interna
-      servoIN.write(90);
-      isServoOpenIN = true;
-      servoCloseTimeIN = currentMillis + tempo; // Define o tempo para fechar a porta
-      isExtLast = true;
-
-      if (debug) {
-        Serial.println("Porta interna aberta.");
-      }
-    }
+    handleButtonPress(BUTTON_PIN_IN, lastPressIN, currentMillis, debounceDelay, true, tempo, isServoOpenIN, servoCloseTimeIN, servoIN, isExtLast, debug);
 
     // Verifica se o botão externo foi pressionado
-    if (digitalRead(BUTTON_PIN_OUT) == LOW && currentMillis - lastPressOUT > debounceDelay) {
-      lastPressOUT = currentMillis; // Atualiza o tempo do último evento
-
-      if (debug) {
-        Serial.println("Botão externo pressionado.");
-      }
-
-      // Abre a porta externa
-      servoOUT.write(90);
-      isServoOpenOUT = true;
-      servoCloseTimeOUT = currentMillis + tempo; // Define o tempo para fechar a porta
-      isExtLast = false;
-      
-      if (debug) {
-        Serial.println("Porta externa aberta.");
-      }
-    }
+    handleButtonPress(BUTTON_PIN_OUT, lastPressOUT, currentMillis, debounceDelay, false, tempo, isServoOpenOUT, servoCloseTimeOUT, servoOUT, isExtLast, debug);
 
     // Fecha a porta interna automaticamente após o tempo definido
-    if (isServoOpenIN && currentMillis > servoCloseTimeIN) {
-      servoIN.write(0);
-      isServoOpenIN = false;
-      if (debug) {
-        Serial.println("Porta interna fechada.");
-      }
-    }
+    autoClosePort(isServoOpenIN, currentMillis, servoCloseTimeIN, servoIN, "Porta interna fechada.", debug);
 
     // Fecha a porta externa automaticamente após o tempo definido
-    if (isServoOpenOUT && currentMillis > servoCloseTimeOUT) {
-      servoOUT.write(0);
-      isServoOpenOUT = false;
-      if (debug) {
-        Serial.println("Porta externa fechada.");
-      }
+    autoClosePort(isServoOpenOUT, currentMillis, servoCloseTimeOUT, servoOUT, "Porta externa fechada.", debug);
+
+    // Verifica a Tag
+    handleTagPress(currentMillis, lastPressOUT, debounceDelay, tempo, isExtLast, isServoOpenIN, servoIN, servoCloseTimeIN, isServoOpenOUT, servoOUT, servoCloseTimeOUT, debug);
+
+    vTaskDelay(50 / portTICK_PERIOD_MS); // Aguarda 50ms antes de verificar novamente
+  }
+}
+
+void handleButtonPress(int buttonPin, unsigned long &lastPress, unsigned long currentMillis, const unsigned long debounceDelay, bool isInternal, int tempo, bool &isServoOpen, unsigned long &servoCloseTime, Servo &servo, bool &isExtLast, bool debug) {
+  if (digitalRead(buttonPin) == LOW && currentMillis - lastPress > debounceDelay) {
+    lastPress = currentMillis; // Atualiza o tempo do último evento
+
+    if (debug) {
+      String buttonType = isInternal ? "interno" : "externo";
+      Serial.println("Botão " + buttonType + " pressionado.");
     }
 
-  //Porta Tag
-  //TO DO TAG
-  if (digitalRead(BUTTON_PIN_2) == LOW && currentMillis - lastPressOUT > debounceDelay){
+    // Abre a porta (interna ou externa)
+    servo.write(90);
+    isServoOpen = true;
+    servoCloseTime = currentMillis + tempo; // Define o tempo para fechar a porta
+
+    isExtLast = !isInternal; // Inverte o estado
+
     if (debug) {
-        Serial.println("TAG Reconhecida");
-      }
-    if(isExtLast){
+      String portType = isInternal ? "interna" : "externa";
+      Serial.println("Porta " + portType + " aberta.");
+    }
+  }
+}
+
+void autoClosePort(bool &isServoOpen, unsigned long currentMillis, unsigned long servoCloseTime, Servo &servo, String message, bool debug) {
+  if (isServoOpen && currentMillis > servoCloseTime) {
+    servo.write(0);
+    isServoOpen = false;
+    if (debug) {
+      Serial.println(message);
+    }
+  }
+}
+
+void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, const unsigned long debounceDelay, int tempo, bool &isExtLast, bool &isServoOpenIN, Servo &servoIN, unsigned long &servoCloseTimeIN, bool &isServoOpenOUT, Servo &servoOUT, unsigned long &servoCloseTimeOUT, bool debug) {
+  if (digitalRead(BUTTON_PIN_2) == LOW && currentMillis - lastPressOUT > debounceDelay) {
+    if (debug) {
+      Serial.println("TAG Reconhecida");
+    }
+
+    if (isExtLast) {
       servoOUT.write(90);
       isServoOpenOUT = true;
       servoCloseTimeOUT = currentMillis + tempo; // Define o tempo para fechar a porta
 
       if (debug) {
-        Serial.println("Porta interna aberta.");
+        Serial.println("Porta externa aberta.");
       }
     } else {
       servoIN.write(90);
       isServoOpenIN = true;
       servoCloseTimeIN = currentMillis + tempo; // Define o tempo para fechar a porta
 
-        if (debug) {
-          Serial.println("Porta interna aberta.");
-        }
+      if (debug) {
+        Serial.println("Porta interna aberta.");
       }
     }
-    vTaskDelay(50 / portTICK_PERIOD_MS); // Aguarda 50ms antes de verificar novamente
   }
 }
 
+bool debugMqttDoors = false;
+
+void openInternalDoor() {
+  servoIN.write(90);
+  if (debugMqttDoors) {
+    Serial.println("Porta interna aberta via MQTT.");
+  }
+}
+
+void openExternalDoor() {
+  servoOUT.write(90);
+  if (debugMqttDoors) {
+    Serial.println("Porta externa aberta via MQTT.");
+  }
+}
+
+void closeInternalDoor() {
+  servoIN.write(0);
+  if (debugMqttDoors) {
+    Serial.println("Porta interna fechada via MQTT.");
+  }
+}
+
+void closeExternalDoor() {
+  servoOUT.write(0);
+  if (debugMqttDoors) {
+    Serial.println("Porta externa fechada via MQTT.");
+  }
+}
+
+
+
+
+
 void loop() {
   //LOOP VAZIO :)
+
+  Como ficaria o codigo com a função: 
+
+void controlDoor(Servo &servo, int angle, String portType) {
+  servo.write(angle);
+  String action = (angle == 90) ? "aberta" : "fechada";
+  Serial.println("Porta " + portType + " " + action);
+}
+
+Me de  codigo completo
+
+  
 }
