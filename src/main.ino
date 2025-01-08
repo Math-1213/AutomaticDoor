@@ -1,27 +1,27 @@
-#include <SD.h>           //Interage com o Cartão SD
-#include <SPI.h>          //Intergae com dispositivos SPI
-#include <ESP32Servo.h>   //Controla os Servos
-#include <WiFi.h>         //Permite Conexão WIFI
-#include <HTTPClient.h>   //Permite Requisições HTTP
-#include <PubSubClient.h> //Permite Requisições MQTT
+#include <SD.h>           // Interage com o Cartão SD
+#include <SPI.h>          // Interage com dispositivos SPI
+#include <ESP32Servo.h>   // Controla os Servos
+#include <WiFi.h>         // Permite Conexão WIFI
+#include <HTTPClient.h>   // Permite Requisições HTTP
+#include <PubSubClient.h> // Permite Requisições MQTT
 #include <ArduinoJson.h>  // Para parsear o JSON
+#include <MFRC522.h>      // Biblioteca para RFID
 
 // ---------------- Define os Pinos ---------------- //
 
-//Pinos SD Card Reader
+// Pinos SD Card Reader
 #define SD_CS_PIN 15      // Pino CS (Chip Select) do cartão SD
 
-//Pinos RFID
+// Pinos RFID
 #define RFID_CS_PIN 5     // Pino CS (Chip Select) para o RFID
 #define RFID_RST_PIN 22   // Pino RST (Reset) para o RFID
 
-//Podemos compartilhar os pinos MOSI, MISO, e SCK entre os dispositivos (SD e RFID)
-//Pinos Comuns RFID e SD
+// Pinos Comuns RFID e SD
 #define MOSI_PIN 23      // Pino MOSI (Master Out Slave In)
 #define MISO_PIN 19      // Pino MISO (Master In Slave Out)
 #define SCK_PIN 18       // Pino SCK (Clock)
 
-//Outros Pinos
+// Pinos Outros
 #define BUTTON_PIN_2 32    // TROCAR PELA TAG
 #define BUTTON_PIN_IN 22   // Botão Interno
 #define BUTTON_PIN_OUT 33  // Botão Externo
@@ -36,12 +36,13 @@
 Servo servoIN;
 Servo servoOUT;
 File logFile;
+MFRC522 rfid(RFID_CS_PIN, RFID_RST_PIN); // Inicializa o objeto RFID
 bool isTagRegistrationMode = false; // Controle do modo de cadastro de tag
 String currentTag = "";             // Tag atual sendo lida ou cadastrada
 
 // Configuração Wi-Fi
-const char* ssid = "nome da rede";
-const char* password = "senha da rede";
+const char* ssid = "nome_da_rede";
+const char* password = "senha_da_rede";
 
 // Configuração MQTT
 const char* mqtt_server = "mqtt://broker.mqtt.com";  // Endereço do broker MQTT
@@ -235,18 +236,17 @@ void reconnectMQTT() {
       mqttClient.subscribe("home/doors/openOUT");
       mqttClient.subscribe("home/doors/registerTag");
       mqttClient.subscribe("home/doors/stopRegisterTag");
-      if (debug) {
-        Serial.println("Conectado ao broker MQTT.");
-      }
     } else {
-      if (debug) {
-        Serial.print("Falha na conexão MQTT, tentando novamente...");
-      }
       delay(5000);
     }
   }
 }
 
+void initRFID() {
+  SPI.begin();  // Inicia o barramento SPI
+  rfid.PCD_Init();  // Inicializa o MFRC522
+  Serial.println("Leitor RFID pronto.");
+}
 
 // Define as Funções
 void Lights();
@@ -262,23 +262,10 @@ void setup() {
     }
     Serial.println("SD Card inicializado.");
 
-  WiFi.begin(ssid, password);  // Conecta à rede Wi-Fi
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print(".");
-  }
-
-  Serial.println("Conectado ao Wi-Fi!");
-
-  // Testa a função de obter a data e hora
-  String currentDateTime = getCurrentDateTime();
-  Serial.println("Data e Hora Atual: " + currentDateTime);
+    setupWiFi();
 
     // Inicializa outros dispositivos (RFID, Servo, etc.)
-    SPI.begin(); // Inicia o barramento SPI
-    rfid.PCD_Init(); // Inicializa o MFRC522
-    Serial.println("Leitor RFID pronto.");
+    initRFID();
     
     // Inicializa outros componentes, como os servos
     servoIN.attach(SERVO_PIN_1);
@@ -412,7 +399,7 @@ void handleButtonPress(int buttonPin, unsigned long &lastPress, unsigned long cu
     isServoOpen = true;
     servoCloseTime = currentMillis + tempo; // Define o tempo para fechar a porta
 
-    isExtLast = !isInternal; // Inverte o estado
+    isExtLast = !isInternal; // Inverte o estado para a tag identificar a última porta aberta
 
     if (debug) {
       String portType = isInternal ? "interna" : "externa";
@@ -437,6 +424,7 @@ void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, co
       Serial.println("TAG Reconhecida");
     }
 
+    // Abre a porta oposta à última aberta
     if (isExtLast) {
       servoOUT.write(90);
       isServoOpenOUT = true;
@@ -457,6 +445,9 @@ void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, co
   }
 }
 
+
+
+// MQTT DOORS CONTROL
 bool debugMqttDoors = false;
 
 void openInternalDoor() {
@@ -487,22 +478,6 @@ void closeExternalDoor() {
   }
 }
 
-
-
-
-
 void loop() {
   //LOOP VAZIO :)
-
-  Como ficaria o codigo com a função: 
-
-void controlDoor(Servo &servo, int angle, String portType) {
-  servo.write(angle);
-  String action = (angle == 90) ? "aberta" : "fechada";
-  Serial.println("Porta " + portType + " " + action);
-}
-
-Me de  codigo completo
-
-  
 }
