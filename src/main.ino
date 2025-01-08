@@ -22,8 +22,7 @@
 #define SCK_PIN 18       // Pino SCK (Clock)
 
 // Pinos Outros
-#define BUTTON_PIN_2 32    // TROCAR PELA TAG
-#define BUTTON_PIN_IN 22   // Botão Interno
+#define BUTTON_PIN_IN 32   // Botão Interno
 #define BUTTON_PIN_OUT 33  // Botão Externo
 #define BUZZER_PIN 2       // Buzzer
 #define LED_PIN 25         // LED 
