@@ -40,15 +40,15 @@ bool isTagRegistrationMode = false; // Controle do modo de cadastro de tag
 String currentTag = "";             // Tag atual sendo lida ou cadastrada
 
 // Configuração Wi-Fi
-const char* ssid = "nome_da_rede";
-const char* password = "senha_da_rede";
+const char* ssid = "Made_In_Heaven";
+const char* password = "Verdao123!";
 
 // Configuração MQTT
-const char* mqtt_server = "mqtt://broker.mqtt.com";  // Endereço do broker MQTT
-const int mqtt_port = 1883;                          // Porta MQTT
+const char* mqtt_server = "37caacba90b842b38a69fae005a025e2.s1.eu.hivemq.cloud";  // Endereço do broker MQTT
+const int mqtt_port = 8883;                          // Porta MQTT
 const char* mqtt_user = "usuario";                   // Usuário (se necessário)
-const char* mqtt_password = "senha";                 // Senha (se necessário)
-const char* mqtt_topic = "test/topic";               // Tópico MQTT
+const char* mqtt_password = "Senha12.";                 // Senha (se necessário)
+const char* mqtt_topic = "home/doors";               // Tópico MQTT
 
 WiFiClient espClient;   // Cliente Wi-Fi para o MQTT
 PubSubClient mqttClient(espClient);  // Cliente MQTT
@@ -193,6 +193,11 @@ void setupMQTT() {
   mqttClient.setCallback(mqttCallback);
 }
 
+void openInternalDoor();
+void closeInternalDoor();
+void openExternalDoor();
+void closeExternalDoor();
+
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   bool debug = false;
   String msg = "";
@@ -271,13 +276,12 @@ void setup() {
     servoOUT.attach(SERVO_PIN_2);
 
     // Configuração do MQTT
-    mqttClient.setServer(MQTT_BROKER, 1883);
+    mqttClient.setServer("37caacba90b842b38a69fae005a025e2.s1.eu.hivemq.cloud", 8883);
     mqttClient.setCallback(mqttCallback);
 
 
     // Define as Entradas e Saídas
     pinMode(BUTTON_PIN_IN, INPUT_PULLUP);
-    pinMode(BUTTON_PIN_2, INPUT_PULLUP);
     pinMode(BUTTON_PIN_OUT, INPUT_PULLUP);
     pinMode(BUZZER_PIN, OUTPUT);
     pinMode(LED_PIN, OUTPUT);
@@ -418,10 +422,6 @@ void autoClosePort(bool &isServoOpen, unsigned long currentMillis, unsigned long
 }
 
 void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, const unsigned long debounceDelay, int tempo, bool &isExtLast, bool &isServoOpenIN, Servo &servoIN, unsigned long &servoCloseTimeIN, bool &isServoOpenOUT, Servo &servoOUT, unsigned long &servoCloseTimeOUT, bool debug) {
-  if (digitalRead(BUTTON_PIN_2) == LOW && currentMillis - lastPressOUT > debounceDelay) {
-    if (debug) {
-      Serial.println("TAG Reconhecida");
-    }
 
     // Abre a porta oposta à última aberta
     if (isExtLast) {
@@ -439,12 +439,9 @@ void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, co
 
       if (debug) {
         Serial.println("Porta interna aberta.");
-      }
     }
   }
 }
-
-
 
 // MQTT DOORS CONTROL
 bool debugMqttDoors = false;
