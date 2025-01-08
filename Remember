@@ -1,0 +1,106 @@
+### Mudanças no Projeto do ESP32:
+1. **Adição do Modo de Registro de Tags via MQTT:**
+   - **Comando MQTT para Ativar o Modo de Registro:**
+     - O ESP32 agora responde ao comando `home/doors/registerTag` para ativar o modo de registro de tags.
+   - **Comando MQTT para Desativar o Modo de Registro:**
+     - O comando `home/doors/stopRegisterTag` é usado para desativar o modo de registro e voltar ao modo "Funcionamento".
+   - **Envia um UUID único para cada tag registrada.**
+   
+2. **Configuração de Modo de Registro e Funcionamento:**
+   - O ESP32 alterna entre os modos **"Funcionamento"** e **"Registro"**, dependendo do comando MQTT recebido.
+   - Quando no modo "Registro", ele irá aceitar o nome do proprietário e informações adicionais, e registrar as tags associadas.
+
+3. **Resposta ao Envio de Dados de Tag:**
+   - Após a confirmação do registro de uma tag, o ESP32 mudará para o modo "Funcionamento", esperando comandos normais para controle de portas.
+
+4. **Integração do Módulo RFID com o ESP32:**
+   - O ESP32 agora precisa lidar com a captura e envio de dados de tags RFID, como o ID da tag, nome do proprietário, e informações adicionais através do MQTT.
+   
+5. **Comandos MQTT Para Controle das Portas:**
+   - O ESP32 recebe os comandos MQTT para abrir e fechar portas internas e externas (`home/doors/openIN`, `home/doors/closeIN`, etc.).
+
+### Mudanças no Projeto Android:
+1. **Adição de ViewModel para Controle de Logs:**
+   - Criamos o **`LogViewModel`**, que agora gerencia as entradas de log, inserindo dados no banco de dados de logs. Esse ViewModel interage com o **Room Database** para armazenar as ações do usuário, como o login, método de login e informações adicionais.
+   
+2. **Tela para Registrar Tags:**
+   - A **`RegisterTagActivity`** foi criada para permitir o cadastro de novas tags com nome, descrição, e outras informações. 
+   - Foi adicionado um botão para alternar o modo de registro de tags no ESP32, enviando os comandos MQTT (`home/doors/registerTag` e `home/doors/stopRegisterTag`).
+   - Quando no modo "Registro", o nome do proprietário e as informações adicionais da tag podem ser preenchidos.
+
+3. **Integração de Comandos MQTT:**
+   - O Android agora envia comandos MQTT para o ESP32 para controlar portas e para alternar entre os modos de "Funcionamento" e "Registro" de tags.
+   
+4. **Tela para Exibir Logs de Ações:**
+   - Criamos uma tela para mostrar todas as entradas de log armazenadas no banco de dados do dispositivo Android.
+   
+5. **Tela de Edição de Tags:**
+   - Criamos uma tela que lista todas as tags registradas e permite a edição de suas informações.
+
+6. **Log de Ações no Banco de Dados:**
+   - O app agora registra ações como login, método de login, e outras informações relevantes (como ações de controle de portas ou cadastro de tags) em um banco de dados usando o Room.
+
+----------------------------------------------------
+Configurar o BROKER:
+Acessar o HiveMQ:
+
+Abra o navegador e acesse o site do HiveMQ.
+Clique em "Get Started" ou "Try HiveMQ Cloud".
+Criar uma Conta:
+
+Para usar o serviço, você precisa criar uma conta no HiveMQ. 
+Após criar a conta, você terá acesso a uma instância de HiveMQ Cloud para testes.
+Criar uma Instância:
+
+Após o login, você será redirecionado para o painel do HiveMQ Cloud.
+Clique em "Create new instance" para criar uma nova instância.
+Escolha a opção "Free" (grátis) para começar com o plano gratuito, que oferece uma instância básica de broker MQTT.
+Defina o nome da instância e configure as preferências de acesso.
+Obter Detalhes de Conexão:
+
+Após criar a instância, você verá os detalhes de endereço do broker, porta e credenciais (usuário e senha) na interface do HiveMQ Cloud.
+Os detalhes de conexão fornecidos pelo HiveMQ geralmente são os seguintes:
+Host: broker.hivemq.com (ou um endereço específico fornecido)
+Porta: 1883 (para conexões sem TLS) ou 8883 (para conexões seguras com TLS)
+Usuário e Senha: Você pode configurar ou deixar em branco dependendo da sua instância.
+Conectar seu Cliente MQTT (ESP32 ou App Android):
+
+
+
+
+Tópicos MQTT Utilizados:
+
+Para Controle de Portas:
+
+home/doors/openIN: Enviado para abrir a porta interna.
+home/doors/closeIN: Enviado para fechar a porta interna.
+home/doors/openOUT: Enviado para abrir a porta externa.
+home/doors/closeOUT: Enviado para fechar a porta externa.
+Para Registro de Tags (Modo de Registro):
+
+home/doors/registerTag: Enviado para ativar o modo de registro de tags no ESP32.
+home/doors/stopRegisterTag: Enviado para desativar o modo de registro de tags no ESP32.
+Para Enviar Dados de Tags:
+
+O ID da tag e as informações associadas podem ser enviados por meio de tópicos personalizados, como home/doors/tagInfo.
+
+
+Exemplo de uso:
+//ESP32
+mqttClient.publish("home/doors/openIN", ""); // Abrir porta interna
+
+//ANDROID
+mqttManager.publish("home/doors/openIN", "")
+
+
+
+
+
+
+
+
+
+
+
+
+
