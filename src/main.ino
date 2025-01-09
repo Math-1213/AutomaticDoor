@@ -40,11 +40,11 @@ bool isTagRegistrationMode = false; // Controle do modo de cadastro de tag
 String currentTag = "";             // Tag atual sendo lida ou cadastrada
 
 // Configuração Wi-Fi
-const char* ssid = "Made_In_Heaven";
-const char* password = "Verdao123!";
+const char* ssid = "ifsp";
+const char* password = "12345678";
 
 // Configuração MQTT
-const char* mqtt_server = "37caacba90b842b38a69fae005a025e2.s1.eu.hivemq.cloud";  // Endereço do broker MQTT
+const char* mqtt_server = "zb390c8c.ala.us-east-1.emqxsl.com";  // Endereço do broker MQTT
 const int mqtt_port = 8883;                          // Porta MQTT
 const char* mqtt_user = "usuario";                   // Usuário (se necessário)
 const char* mqtt_password = "Senha12.";                 // Senha (se necessário)
@@ -157,7 +157,7 @@ void createLogger(String login, String method, String additionalInfo) {
   Log log(getCurrentDateTime(), login, method, additionalInfo);
   
   // Salvar o log no SD
-  log.saveToSD();  // Grava no SD Card
+  //log.saveToSD();  // Grava no SD Card
 }
 
 // Função para inicializar o SD
@@ -232,6 +232,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
+/*
+const char* mqtt_server = "zb390c8c.ala.us-east-1.emqxsl.com";  // Endereço do broker MQTT
+const int mqtt_port = 8883;                          // Porta MQTT
+const char* mqtt_user = "usuario";                   // Usuário (se necessário)
+const char* mqtt_password = "Senha12.";                 // Senha (se necessário)
+const char* mqtt_topic = "home/doors";               // Tópico MQTT
+*/
 void reconnectMQTT() {
   bool debug = false;
   while (!mqttClient.connected()) {
@@ -241,7 +248,8 @@ void reconnectMQTT() {
       mqttClient.subscribe("home/doors/registerTag");
       mqttClient.subscribe("home/doors/stopRegisterTag");
     } else {
-      delay(5000);
+      delay(500);
+      Serial.println("Erro na conexão MQTT");
     }
   }
 }
@@ -262,22 +270,25 @@ void setup() {
 
     // Inicializa o SD Card
     if (!initializeSD()) {
-        return;
+    //    return;
     }
     Serial.println("SD Card inicializado.");
 
     setupWiFi();
 
     // Inicializa outros dispositivos (RFID, Servo, etc.)
-    initRFID();
+   // initRFID();
     
     // Inicializa outros componentes, como os servos
     servoIN.attach(SERVO_PIN_1);
     servoOUT.attach(SERVO_PIN_2);
+    Serial.println("Servos Conectados");
 
     // Configuração do MQTT
-    mqttClient.setServer("37caacba90b842b38a69fae005a025e2.s1.eu.hivemq.cloud", 8883);
+    Serial.println("Configurando MQTT");
+    mqttClient.setServer(mqtt_server, mqtt_port);
     mqttClient.setCallback(mqttCallback);
+    Serial.println("Conexão MQTT Configurado");
 
 
     // Define as Entradas e Saídas
@@ -288,8 +299,6 @@ void setup() {
     pinMode(ECHO_PIN, INPUT);
     pinMode(TRIGGER_PIN, OUTPUT);
   
-    servoIN.attach(SERVO_PIN_1);
-    servoOUT.attach(SERVO_PIN_2);
   
     digitalWrite(BUZZER_PIN, LOW);  // Buzzer off
     digitalWrite(LED_PIN, LOW);     // LED off
@@ -298,12 +307,15 @@ void setup() {
 
   // Conecta-se ao MQTT
   while (!mqttClient.connected()) {
+    Serial.println("Conectando MQTT");
     reconnectMQTT();
   }
-  mqttClient.loop();
+  Serial.println("MQTT Conectado");
+ 
     // Cria as tasks
     xTaskCreate(Lights, "LightsTask", 2048, NULL, 1, NULL);
     xTaskCreate(Doors, "DoorsTask", 1000, NULL, 1, NULL);
+    mqttClient.loop();
 }
 
 void Lights(void *parameter) {
