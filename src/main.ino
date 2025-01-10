@@ -27,7 +27,7 @@
 #define BUZZER_PIN 2       // Buzzer
 #define LED_PIN 25         // LED 
 #define SERVO_PIN_1 4      // Servo Interno
-#define SERVO_PIN_2 21     // Servo Externo
+#define SERVO_PIN_2 34     // Servo Externo
 #define ECHO_PIN 35         // Echo - Sensor de Presença
 #define TRIGGER_PIN 26     // Trig - Sensor de Presença
 
@@ -40,14 +40,14 @@ bool isTagRegistrationMode = false; // Controle do modo de cadastro de tag
 String currentTag = "";             // Tag atual sendo lida ou cadastrada
 
 // Configuração Wi-Fi
-const char* ssid = "ifsp";
-const char* password = "12345678";
+const char* ssid = "Made_In_Heaven";
+const char* password = "Verdao123!";
 
 // Configuração MQTT
-const char* mqtt_server = "zb390c8c.ala.us-east-1.emqxsl.com";  // Endereço do broker MQTT
-const int mqtt_port = 8883;                          // Porta MQTT
-const char* mqtt_user = "usuario";                   // Usuário (se necessário)
-const char* mqtt_password = "Senha12.";                 // Senha (se necessário)
+const char* mqtt_server = "broker.hivemq.com";  // Endereço do broker MQTT
+const int mqtt_port = 1883;                          // Porta MQTT
+const char* mqtt_user = "EspClient";                   // Usuário (se necessário)
+const char* mqtt_password = "ifspEsp32";                 // Senha (se necessário)
 const char* mqtt_topic = "home/doors";               // Tópico MQTT
 
 WiFiClient espClient;   // Cliente Wi-Fi para o MQTT
@@ -277,7 +277,7 @@ void setup() {
     setupWiFi();
 
     // Inicializa outros dispositivos (RFID, Servo, etc.)
-   // initRFID();
+    initRFID();
     
     // Inicializa outros componentes, como os servos
     servoIN.attach(SERVO_PIN_1);
@@ -313,14 +313,15 @@ void setup() {
   Serial.println("MQTT Conectado");
  
     // Cria as tasks
-    xTaskCreate(Lights, "LightsTask", 2048, NULL, 1, NULL);
-    xTaskCreate(Doors, "DoorsTask", 1000, NULL, 1, NULL);
+ xTaskCreate(Lights, "LightsTask", 4096, NULL, 1, NULL);
+xTaskCreate(Doors, "DoorsTask", 4096, NULL, 1, NULL);
+
     mqttClient.loop();
 }
 
 void Lights(void *parameter) {
   // Variável de depuração
-  bool debug = true;
+  bool debug = false;
 
   // Configurações
   int distanciaMinima = 30; // Distância mínima para acionar a luz
@@ -338,7 +339,7 @@ void Lights(void *parameter) {
     int duracao = pulseIn(ECHO_PIN, HIGH);
     int distancia = duracao * 0.034 * 0.5;
 
-    if (distancia < distanciaMinima) { // Presença detectada
+    if (distancia < distanciaMinima && distancia > 0) { // Presença detectada
       if (debug) {
         Serial.print("Presença detectada! Distância: ");
         Serial.println(distancia);
@@ -381,6 +382,7 @@ void Doors(void *parameter) {
   while (true) {
     unsigned long currentMillis = millis();
 
+  servoIN.write(90);
     // Verifica se o botão interno foi pressionado
     handleButtonPress(BUTTON_PIN_IN, lastPressIN, currentMillis, debounceDelay, true, tempo, isServoOpenIN, servoCloseTimeIN, servoIN, isExtLast, debug);
 
@@ -394,7 +396,7 @@ void Doors(void *parameter) {
     autoClosePort(isServoOpenOUT, currentMillis, servoCloseTimeOUT, servoOUT, "Porta externa fechada.", debug);
 
     // Verifica a Tag
-    handleTagPress(currentMillis, lastPressOUT, debounceDelay, tempo, isExtLast, isServoOpenIN, servoIN, servoCloseTimeIN, isServoOpenOUT, servoOUT, servoCloseTimeOUT, debug);
+    //handleTagPress(currentMillis, lastPressOUT, debounceDelay, tempo, isExtLast, isServoOpenIN, servoIN, servoCloseTimeIN, isServoOpenOUT, servoOUT, servoCloseTimeOUT, debug);
 
     vTaskDelay(50 / portTICK_PERIOD_MS); // Aguarda 50ms antes de verificar novamente
   }
@@ -442,7 +444,7 @@ void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, co
       servoCloseTimeOUT = currentMillis + tempo; // Define o tempo para fechar a porta
 
       if (debug) {
-        Serial.println("Porta externa aberta.");
+        Serial.println("Porta externa aberta. TAG");
       }
     } else {
       servoIN.write(90);
@@ -450,7 +452,7 @@ void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, co
       servoCloseTimeIN = currentMillis + tempo; // Define o tempo para fechar a porta
 
       if (debug) {
-        Serial.println("Porta interna aberta.");
+        Serial.println("Porta interna aberta. TAG");
     }
   }
 }
@@ -488,4 +490,9 @@ void closeExternalDoor() {
 
 void loop() {
   //LOOP VAZIO :)
+  //Serial.print("Interno: ");
+  //Serial.println(digitalRead(BUTTON_PIN_IN));
+  //Serial.print("Externo: ");
+  //Serial.println(digitalRead(BUTTON_PIN_OUT));
+  
 }
