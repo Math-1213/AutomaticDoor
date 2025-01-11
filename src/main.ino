@@ -207,31 +207,39 @@ void openExternalDoor();
 void closeExternalDoor();
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
-  bool debug = false;
+  bool debug = true;
   String msg = "";
   for (unsigned int i = 0; i < length; i++) {
     msg += (char)payload[i];
   }
+
+  if(debug){
+    Serial.print("Tópico: ");
+    Serial.println(topic);
+    Serial.print("Mensagem: ");
+    Serial.println(msg);
+  }
+
   // Verifica o tópico e processa a mensagem
-  if (topic == "home/doors/openIN" && msg == "1") {
+  if (String(topic) == "home/doors/openIN" && msg == "1") {
     // Abrir a porta interna via MQTT
     openInternalDoor();
-  } else if (topic == "home/doors/openOUT" && msg == "1") {
+  } else if (String(topic) == "home/doors/openOUT" && msg == "1") {
     // Abrir a porta externa via MQTT
     openExternalDoor();
-  } else if (topic == "home/doors/closeIN" && msg == "1") {
+  } else if (String(topic) == "home/doors/closeIN" && msg == "1") {
     // Fechar a porta interna via MQTT
     closeInternalDoor();
-  } else if (topic == "home/doors/closeOUT" && msg == "1") {
+  } else if (String(topic) == "home/doors/closeOUT" && msg == "1") {
     // Fechar a porta externa via MQTT
     closeExternalDoor();
-  } else if (topic == "home/doors/registerTag" && msg == "1") {
+  } else if (String(topic) == "home/doors/registerTag" && msg == "1") {
     // Ativar o modo de cadastro de tag
     isTagRegistrationMode = true;
     if (debug) {
       Serial.println("Modo de cadastro de tag ativado.");
     }
-  } else if (topic == "home/doors/stopRegisterTag" && msg == "1") {
+  } else if (String(topic) == "home/doors/stopRegisterTag" && msg == "1") {
     // Desativar o modo de cadastro de tag
     isTagRegistrationMode = false;
     if (debug) {
@@ -246,6 +254,8 @@ void reconnectMQTT() {
     if (mqttClient.connect("EspClient")) {
       mqttClient.subscribe("home/doors/openIN");
       mqttClient.subscribe("home/doors/openOUT");
+      mqttClient.subscribe("home/doors/closeIN");
+      mqttClient.subscribe("home/doors/closeOUT");
       mqttClient.subscribe("home/doors/registerTag");
       mqttClient.subscribe("home/doors/stopRegisterTag");
     } else {
@@ -287,6 +297,11 @@ bool readRFID() {
 
   // Agora a variável currentTag contém o UID completo do cartão
   Serial.println(currentTag);  // Imprime o UID completo no Monitor Serial
+
+  // Emite o som no buzzer
+  digitalWrite(BUZZER_PIN, HIGH);  // Liga o buzzer
+  delay(100);                      // Tempo do buzzer ligado (100ms)
+  digitalWrite(BUZZER_PIN, LOW);   // Desliga o buzzer
 
   // Finaliza a comunicação com a tag
   mfrc522.PICC_HaltA();
@@ -536,6 +551,7 @@ void openInternalDoor() {
   servoIN.write(90);
   if (debugMqttDoors) {
     Serial.println("Porta interna aberta via MQTT.");
+    mqttClient.publish("home/doors/statusIN", "Aberta");
   }
 }
 
@@ -543,6 +559,7 @@ void openExternalDoor() {
   servoOUT.write(90);
   if (debugMqttDoors) {
     Serial.println("Porta externa aberta via MQTT.");
+    mqttClient.publish("home/doors/statusOUT", "Aberta");
   }
 }
 
@@ -550,6 +567,7 @@ void closeInternalDoor() {
   servoIN.write(0);
   if (debugMqttDoors) {
     Serial.println("Porta interna fechada via MQTT.");
+    mqttClient.publish("home/doors/statusIN", "Fechada");
   }
 }
 
@@ -557,6 +575,7 @@ void closeExternalDoor() {
   servoOUT.write(0);
   if (debugMqttDoors) {
     Serial.println("Porta externa fechada via MQTT.");
+    mqttClient.publish("home/doors/statusOUT", "Fechada");
   }
 }
 
