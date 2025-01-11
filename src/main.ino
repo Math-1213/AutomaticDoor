@@ -26,8 +26,8 @@
 #define BUTTON_PIN_OUT 33  // Botão Externo
 #define BUZZER_PIN 2       // Buzzer
 #define LED_PIN 25         // LED 
-#define SERVO_PIN_1 34      // Servo Interno
-#define SERVO_PIN_2 4     // Servo Externo
+#define SERVO_PIN_1 14      // Servo Interno
+#define SERVO_PIN_2 12     // Servo Externo
 #define ECHO_PIN 35         // Echo - Sensor de Presença
 #define TRIGGER_PIN 26     // Trig - Sensor de Presença
 
@@ -38,10 +38,11 @@ File logFile;
 MFRC522 rfid(RFID_CS_PIN, RFID_RST_PIN); // Inicializa o objeto RFID
 bool isTagRegistrationMode = false; // Controle do modo de cadastro de tag
 String currentTag = "";             // Tag atual sendo lida ou cadastrada
+std::vector<String> rfidList;       // Lista global para armazenar os IDs lidos
 
 // Configuração Wi-Fi
-const char* ssid = "Made_In_Heaven";
-const char* password = "Verdao123!";
+const char* ssid = "CLARO_RAMOS_EXT";
+const char* password = "02072017";
 
 // Configuração MQTT
 const char* mqtt_server = "broker.hivemq.com";  // Endereço do broker MQTT
@@ -232,13 +233,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-/*
-const char* mqtt_server = "zb390c8c.ala.us-east-1.emqxsl.com";  // Endereço do broker MQTT
-const int mqtt_port = 8883;                          // Porta MQTT
-const char* mqtt_user = "usuario";                   // Usuário (se necessário)
-const char* mqtt_password = "Senha12.";                 // Senha (se necessário)
-const char* mqtt_topic = "home/doors";               // Tópico MQTT
-*/
 void reconnectMQTT() {
   bool debug = false;
   while (!mqttClient.connected()) {
@@ -259,6 +253,52 @@ void initRFID() {
   rfid.PCD_Init();  // Inicializa o MFRC522
   Serial.println("Leitor RFID pronto.");
 }
+
+// Funções do RFID
+bool isRFIDRegistered(const String& id) {
+    for (const String& registeredID : rfidList) {
+        if (registeredID == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Função para adicionar o ID à lista se ainda não estiver registrado
+void addRFID(const String& id) {
+    if (!isRFIDRegistered(id)) {
+        rfidList.push_back(id);
+        Serial.println("Novo RFID registrado: " + id);
+    } else {
+        Serial.println("RFID já registrado: " + id);
+    }
+}
+
+bool readRFID() {
+  // Verifica se há uma nova tag presente
+  if (!rfid.PICC_IsNewCardPresent()) {
+    return false; // Nenhuma tag detectada
+  }
+
+  // Verifica se é possível ler a tag
+  if (!rfid.PICC_ReadCardSerial()) {
+    return false; // Falha ao ler a tag
+  }
+
+  // Exibe o UID no monitor serial
+  Serial.print("UID da Tag: ");
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    Serial.print(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
+    Serial.print(rfid.uid.uidByte[i], HEX);
+  }
+  Serial.println();
+
+  // Finaliza a comunicação com a tag
+  rfid.PICC_HaltA();
+
+  return true; // Leitura bem-sucedida
+}
+
 
 // Define as Funções
 void Lights();
@@ -312,9 +352,10 @@ void setup() {
   }
   Serial.println("MQTT Conectado");
  
-    // Cria as tasks
- xTaskCreate(Lights, "LightsTask", 4096, NULL, 1, NULL);
-xTaskCreate(Doors, "DoorsTask", 4096, NULL, 1, NULL);
+  Serial.println("Iniciado com Sucesso");
+   // Cria as tasks
+   //xTaskCreate(Lights, "LightsTask", 4096, NULL, 1, NULL);
+   xTaskCreate(Doors, "DoorsTask", 4096, NULL, 1, NULL);
 
     mqttClient.loop();
 }
@@ -382,20 +423,16 @@ void Doors(void *parameter) {
   while (true) {
     unsigned long currentMillis = millis();
 
-  servoIN.write(90);
-    // Verifica se o botão interno foi pressionado
+    // Verifica se os botões forão pressionados
     handleButtonPress(BUTTON_PIN_IN, lastPressIN, currentMillis, debounceDelay, true, tempo, isServoOpenIN, servoCloseTimeIN, servoIN, isExtLast, debug);
-
-    // Verifica se o botão externo foi pressionado
     handleButtonPress(BUTTON_PIN_OUT, lastPressOUT, currentMillis, debounceDelay, false, tempo, isServoOpenOUT, servoCloseTimeOUT, servoOUT, isExtLast, debug);
 
-    // Fecha a porta interna automaticamente após o tempo definido
+    // Fecha as portas automaticamente após o tempo definido
     autoClosePort(isServoOpenIN, currentMillis, servoCloseTimeIN, servoIN, "Porta interna fechada.", debug);
-
-    // Fecha a porta externa automaticamente após o tempo definido
     autoClosePort(isServoOpenOUT, currentMillis, servoCloseTimeOUT, servoOUT, "Porta externa fechada.", debug);
 
     // Verifica a Tag
+    readRFID();
     //handleTagPress(currentMillis, lastPressOUT, debounceDelay, tempo, isExtLast, isServoOpenIN, servoIN, servoCloseTimeIN, isServoOpenOUT, servoOUT, servoCloseTimeOUT, debug);
 
     vTaskDelay(50 / portTICK_PERIOD_MS); // Aguarda 50ms antes de verificar novamente
