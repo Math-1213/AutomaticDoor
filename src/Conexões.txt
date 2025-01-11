@@ -1,0 +1,40 @@
+----Cartão SD----
+CS 	- 15
+MOSI 	- 23
+MISO 	- 19
+SCK 	- 18
+VCC	- 5V
+GND	- GND
+
+----RFID----
+CS	- 5
+RST	- 22
+MOSI 	- 23
+MISO 	- 19
+SCK 	- 18
+VCC	- 3.3V
+GND	- GND
+
+----Sensor ECHO----
+ECHO 	- 35    
+TRIGGER - 26
+VCC	- 3.3V
+GND	- GND
+
+----SERVOS----
+SERVO1	- 34
+SERVO2  - 4    
+VCC	- 5V
+GND	- GND
+
+----OUTROS----
+Botão1	- 32  
+Botão2	- 33 
+Botão1	- GND  
+Botão2	- GND
+
+Buzzer	- 2      
+LED	- 25    
+Buzzer	- 3.3V      
+LED	- 3.3V     
+
