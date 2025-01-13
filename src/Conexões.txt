@@ -8,7 +8,7 @@ GND	- GND
 
 ----RFID----
 CS	- 5
-RST	- 22
+RST	- 21
 MOSI 	- 23
 MISO 	- 19
 SCK 	- 18
@@ -37,4 +37,18 @@ Buzzer	- 2
 LED	- 25    
 Buzzer	- 3.3V      
 LED	- 3.3V     
+
+
+----Tópicos home/doors/----
+openIN		: APP manda abrir a porta IN
+openOUT		: APP manda abrir a porta OUT
+closeIN		: APP manda fechar a porta IN
+closeOUT	: APP manda fechar a porta OUT
+registerTag	: APP manda entrar no modo de registro
+stopRegisterTag	: APP manda sair do modo de registro
+Registro	: APP Manda o registro da tag para ser adicionado
+RFID		: ESP32 Manda a uid para ser registrada no APP
+inRegMode	: ESP32 Manda o se está em modo de registro (1 Para sim, 0 para não)
+statusOUT	: ESP32 Manda para o APP o estado da porta OUT (1 para aberta, 0 para fechada)
+statusIN	: ESP32 Manda para o APP o estado da porta IN (1 para aberta, 0 para fechada)
 
