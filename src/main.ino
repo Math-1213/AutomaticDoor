@@ -36,6 +36,7 @@
 #define TRIGGER_PIN 26     // Trig - Sensor de Presença
 
 //Objetos e variaveis globais
+#define FILENAME "/registros.txt"
 Servo servoIN;
 Servo servoOUT;
 File logFile;
@@ -120,6 +121,8 @@ public:
   }
 };
 
+
+// ---------- Funções ---------------- //
 // Função para gerar a data e hora a partir de uma requisição HTTP
 String getCurrentDateTime() {
   // URL para pegar a data e hora de São Paulo (fuso horário: America/Sao_Paulo)
@@ -186,6 +189,34 @@ void printSDLogs() {
   }
 }
 
+void carregarRegistros() {
+  if (!SD.exists(FILENAME)) {
+    Serial.println("Arquivo de registros não encontrado, criando novo...");
+    File file = SD.open(FILENAME, FILE_WRITE);
+    if (file) {
+      file.println("[]"); // Arquivo começa vazio como um array JSON
+      file.close();
+    } else {
+      Serial.println("Falha ao criar o arquivo de registros!");
+    }
+    return;
+  }
+
+  Serial.println("Registros carregados com sucesso!");
+}
+
+void salvarRegistros(JsonArray registros) {
+  File file = SD.open(FILENAME, FILE_WRITE);
+  if (file) {
+    file.seek(0); // Certifique-se de sobrescrever o arquivo
+    serializeJson(registros, file);
+    file.close();
+    Serial.println("Registros salvos com sucesso!");
+  } else {
+    Serial.println("Erro ao abrir o arquivo para salvar!");
+  }
+}
+
 void setupWiFi() {
   Serial.print("Conectando-se à rede Wi-Fi");
   WiFi.begin(ssid, password);
@@ -205,6 +236,85 @@ void openInternalDoor();
 void closeInternalDoor();
 void openExternalDoor();
 void closeExternalDoor();
+
+// Função para processar mensagem de registro
+void processarMensagemRegistro(String payload) {
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, payload);
+
+  if (error) {
+    Serial.println("Erro ao parsear JSON!");
+    return;
+  }
+
+  String metodo = doc["metodo"]; // APAGAR, ATUALIZAR, INSERIR
+  String uid = doc["uid"];
+  String nome = doc["nome"];
+  String addInfo = doc["addInfo"];
+
+  File file = SD.open(FILENAME, FILE_READ);
+  if (!file) {
+    Serial.println("Erro ao abrir arquivo para leitura!");
+    return;
+  }
+
+  StaticJsonDocument<2048> registrosDoc;
+  DeserializationError loadError = deserializeJson(registrosDoc, file);
+  file.close();
+
+  if (loadError) {
+    Serial.println("Erro ao carregar registros!");
+    return;
+  }
+
+  JsonArray registros = registrosDoc.as<JsonArray>();
+
+  if (metodo == "APAGAR") {
+    // Apagar registro por UID
+    bool apagado = false;
+    for (JsonArray::iterator it = registros.begin(); it != registros.end(); ++it) {
+      if ((*it)["uid"] == uid) {
+        registros.remove(it);
+        apagado = true;
+        break;
+      }
+    }
+    if (apagado) {
+      Serial.println("Registro apagado com sucesso!");
+      salvarRegistros(registros);
+    } else {
+      Serial.println("UID não encontrado!");
+    }
+  } else if (metodo == "ATUALIZAR") {
+    // Atualizar registro por UID
+    bool atualizado = false;
+    for (JsonObject registro : registros) {
+      if (registro["uid"] == uid) {
+        registro["nome"] = nome;
+        registro["addInfo"] = addInfo;
+        atualizado = true;
+        break;
+      }
+    }
+    if (atualizado) {
+      Serial.println("Registro atualizado com sucesso!");
+      salvarRegistros(registros);
+    } else {
+      Serial.println("UID não encontrado para atualização!");
+    }
+  } else if (metodo == "INSERIR") {
+    // Inserir novo registro
+    JsonObject novoRegistro = registros.createNestedObject();
+    novoRegistro["uid"] = uid;
+    novoRegistro["nome"] = nome;
+    novoRegistro["addInfo"] = addInfo;
+    salvarRegistros(registros);
+    Serial.println("Registro inserido com sucesso!");
+  } else {
+    Serial.println("Método desconhecido!");
+  }
+}
+
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
   bool debug = true;
@@ -245,6 +355,16 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     if (debug) {
       Serial.println("Modo de cadastro de tag desativado.");
     }
+  } else if (String(topic) == "home/doors/Registro") { // METODO(APAGAR,ATUALIZAR,INSERIR) //UID //NOME //ADDINFO
+    processarMensagemRegistro(msg);
+    /* EXEMPLO DE MENSAGEM de Registro:
+    *
+    *   {
+    *   "metodo": "INSERIR",
+    *   "uid": "12345678",
+    *   "nome": "Joao",
+    *   "addInfo": "Acesso Principal"
+    *}                                  */
   }
 }
 
@@ -258,6 +378,7 @@ void reconnectMQTT() {
       mqttClient.subscribe("home/doors/closeOUT");
       mqttClient.subscribe("home/doors/registerTag");
       mqttClient.subscribe("home/doors/stopRegisterTag");
+      mqttClient.subscribe("home/doors/Registro");
     } else {
       delay(500);
       Serial.println("Erro na conexão MQTT");
@@ -345,6 +466,8 @@ void setup() {
     //    return;
   }
   Serial.println("SD Card inicializado.");
+
+  //carregarRegistros();
 
   setupWiFi();
 
@@ -459,6 +582,7 @@ void Doors(void *parameter) {
   bool isExtLast = false;
   bool isServoOpenIN = false;
   bool isServoOpenOUT = false;
+  bool inRegisterMode = isTagRegistrationMode;
 
   while (true) {
     unsigned long currentMillis = millis();
@@ -478,10 +602,22 @@ void Doors(void *parameter) {
     autoClosePort(isServoOpenOUT, currentMillis, servoCloseTimeOUT, servoOUT, "Porta externa fechada.", debug);
 
     // Verifica a Tag
-    if (readRFID()) {
+    if (readRFID() && !isTagRegistrationMode) {
       if(isRFIDValid()){
       handleTagPress(currentMillis, lastPressOUT, isExtLast, isServoOpenIN, servoIN, servoCloseTimeIN, isServoOpenOUT, servoOUT, servoCloseTimeOUT, debug);
+      } else if (isTagRegistrationMode) {
+        //Enviar tag por lida via mqtt
+        if(!isRFIDValid()){
+          if(debug) Serial.println("Tag Enviada para Cadastro:" + currentTag);
+          mqttClient.publish("home/doors/RFID", currentTag.c_str());
+        }
       }
+    }
+
+    //Manda uma resposta se trocar de modo:
+    if(isTagRegistrationMode != inRegisterMode){
+      inRegisterMode = isTagRegistrationMode;
+      mqttClient.publish("home/doors/inRegMode", inRegisterMode ? "true" : "false");
     }
 
     vTaskDelay(50 / portTICK_PERIOD_MS);  // Aguarda 50ms antes de verificar novamente
@@ -518,30 +654,43 @@ void autoClosePort(bool &isServoOpen, unsigned long currentMillis, unsigned long
     if (debug) {
       Serial.println(message);
     }
+    
   }
 }
 
 void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, bool &isExtLast, bool &isServoOpenIN, Servo &servoIN, unsigned long &servoCloseTimeIN, bool &isServoOpenOUT, Servo &servoOUT, unsigned long &servoCloseTimeOUT, bool debug) {
 
-  // Abre a porta oposta à última aberta
-  if (isExtLast) {
-    servoOUT.write(90);
-    isServoOpenOUT = true;
-    servoCloseTimeOUT = currentMillis + tempo;  // Define o tempo para fechar a porta
-
-    if (debug) {
-      Serial.println("Porta externa aberta. TAG");
+  if(!isTagRegistrationMode){
+    // Abre a porta oposta à última aberta
+    if (isExtLast) {
+      servoOUT.write(90);
+      isServoOpenOUT = true;
+      servoCloseTimeOUT = currentMillis + tempo;  // Define o tempo para fechar a porta
+      mqttClient.publish("home/doors/statusOUT", "Aberta");
+      if (debug) {
+        Serial.println("Porta externa aberta. TAG");
+      }
+      delay(servoCloseTimeOUT);
+      mqttClient.publish("home/doors/statusOUT", "Fechada");
+      if (debug) {
+        Serial.println("Porta externa fechada. TAG");
+      }
+    } else {
+      servoIN.write(90);
+      isServoOpenIN = true;
+      servoCloseTimeIN = currentMillis + tempo;  // Define o tempo para fechar a porta
+      mqttClient.publish("home/doors/statusIN", "Aberta");
+      if (debug) {
+        Serial.println("Porta interna aberta. TAG");
+      }
+      delay(servoCloseTimeIN);
+      mqttClient.publish("home/doors/statusIN", "Fechada");
+      if (debug) {
+        Serial.println("Porta interna fechada. TAG");
+      }
     }
-  } else {
-    servoIN.write(90);
-    isServoOpenIN = true;
-    servoCloseTimeIN = currentMillis + tempo;  // Define o tempo para fechar a porta
-
-    if (debug) {
-      Serial.println("Porta interna aberta. TAG");
-    }
+    isExtLast = !isExtLast;
   }
-  isExtLast = !isExtLast;
 }
 
 // MQTT DOORS CONTROL
@@ -581,8 +730,19 @@ void closeExternalDoor() {
 
 void loop() {
   //LOOP VAZIO :)
-  //Serial.print("Interno: ");
-  //Serial.println(digitalRead(BUTTON_PIN_IN));
-  //Serial.print("Externo: ");
-  //Serial.println(digitalRead(BUTTON_PIN_OUT));
 }
+
+
+/*     Lista de Tópicos home/doors/:
+* openIN		: APP manda abrir a porta IN
+* openOUT		: APP manda abrir a porta OUT
+* closeIN		: APP manda fechar a porta IN
+* closeOUT	: APP manda fechar a porta OUT
+* registerTag	: APP manda entrar no modo de registro
+* stopRegisterTag	: APP manda sair do modo de registro
+* Registro	: APP Manda o registro da tag para ser adicionado
+* RFID		: ESP32 Manda a uid para ser registrada no APP
+* inRegMode	: ESP32 Manda o se está em modo de registro (1 Para sim, 0 para não)
+* statusOUT	: ESP32 Manda para o APP o estado da porta OUT (1 para aberta, 0 para fechada)
+* statusIN	: ESP32 Manda para o APP o estado da porta IN (1 para aberta, 0 para fechada)
+*/
