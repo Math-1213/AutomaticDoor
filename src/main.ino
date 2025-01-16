@@ -51,8 +51,8 @@ bool isCardInit = false;             // Diz se o catão SD foi inicializado com 
 String uids;
 
 // Configuração Wi-Fi
-const char *ssid = "CLARO_RAMOS_EXT";
-const char *password = "02072017";
+const char *ssid = "Made_In_Heaven";
+const char *password = "Verdao123!";
 
 // Configuração MQTT
 const char *mqtt_server = "broker.hivemq.com";  // Endereço do broker MQTT
@@ -199,7 +199,7 @@ void switchToRFID() {
   digitalWrite(RFID_CS_PIN, LOW); // Ativa o RFID
   delay(50);  // Adiciona um pequeno delay
   Serial.println("Serial em SD");
-  SPI.begin();
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
 }
 
 void switchToSD() {
@@ -208,7 +208,7 @@ void switchToSD() {
   digitalWrite(SD_CS_PIN, LOW);    // Ativa o SD Card
   delay(50);  // Adiciona um pequeno delay
   Serial.println("Serial em SD");
-  SPI.begin();
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
 }
 
 
@@ -219,7 +219,7 @@ bool initializeSD() {
     Serial.println("Falha ao inicializar o cartão SD.");
     return false;
   }
-  SPI.begin();  // Reabre o SPI após o SD Card ser inicializado
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);  // Reabre o SPI após o SD Card ser inicializado
   return true;
 }
 
@@ -401,7 +401,7 @@ void reconnectMQTT() {
 void initRFID() {
   SPI.end();  // Desliga SPI antes de inicializar o RFID
   mfrc522.PCD_Init();  // Inicializa o RFID
-  SPI.begin();  // Reabre o SPI após o RFID ser inicializado
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);  // Reabre o SPI após o RFID ser inicializado
   Serial.println("Leitor RFID pronto.");
 }
 
@@ -460,7 +460,7 @@ bool isRFIDValid() {
 }
 
 void setup() {
-  SPI.begin();
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
   // Variavel de TESTE
   uids = ("a32a9013");
 
@@ -633,6 +633,8 @@ void Doors(void *parameter) {
       inRegisterMode = isTagRegistrationMode;
       mqttClient.publish("home/doors/inRegMode", inRegisterMode ? "true" : "false");
     }
+
+    //Serial.println(mfrc522.PCD_PerformSelfTest());
 
     vTaskDelay(50 / portTICK_PERIOD_MS);  // Aguarda 50ms antes de verificar novamente
   }
