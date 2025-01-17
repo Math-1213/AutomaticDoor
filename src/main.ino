@@ -45,22 +45,33 @@ MFRC522DriverSPI driver{ ss_pin };   // Create SPI driver.
 MFRC522 mfrc522{ driver };           // Create MFRC522 instance.
 bool isTagRegistrationMode = false;  // Controle do modo de cadastro de tag
 String currentTag = "";              // Tag atual sendo lida ou cadastrada
+bool isCardInit = false;             // Diz se o catão SD foi inicializado com sucesso
 
 //TODO - Colocar as TAGS No Cartão SD
-String uids[10]; 
+String uids;
 
 // Configuração Wi-Fi
-const char *ssid = "CLARO_RAMOS_EXT";
-const char *password = "02072017";
+const char *ssid = "ifsp";
+const char *password = "12345678";
 
 // Configuração MQTT
 const char *mqtt_server = "broker.hivemq.com";  // Endereço do broker MQTT
 const int mqtt_port = 1883;                     // Porta MQTT
-const char *mqtt_user = "EspClient";            // Usuário 
-const char *mqtt_password = "ifspEsp32";        // Senha 
+const char *mqtt_user = "EspClient";            // Usuário
+const char *mqtt_password = "ifspEsp32";        // Senha
 
 WiFiClient espClient;                // Cliente Wi-Fi para o MQTT
 PubSubClient mqttClient(espClient);  // Cliente MQTT
+
+// Define as Funções
+void Lights();
+void Doors();
+void openInternalDoor();
+void closeInternalDoor();
+void openExternalDoor();
+void closeExternalDoor();
+void switchToRFID();
+void switchToSD();
 
 // ------------ Classe LOG ------------ //
 
@@ -90,7 +101,10 @@ public:
 
   // Gravar log no SD Card
   void saveToSD() {
+    //Seleciona o SD Pelo Barramento SPI
     String log = formatLog();
+    //selectSD();
+    switchToSD();
     File logFile = SD.open("/log.txt", FILE_WRITE);  // Abre o arquivo para escrita
     if (!logFile) {
       Serial.println("Falha ao abrir o arquivo para gravação!");
@@ -101,14 +115,19 @@ public:
     logFile.println(log);
     logFile.close();  // Fecha o arquivo
     Serial.println("Log gravado no SD Card.");
+    switchToRFID();
   }
 
   // Ler log do SD Card
   static String readFromSD() {
+    //Seleciona o SD Pelo Barramento SPI
+    switchToSD();
+    Serial.println("SD Ativado");
     String log = "";
     File logFile = SD.open("/log.txt", FILE_READ);  // Abre o arquivo para leitura
     if (!logFile) {
       Serial.println("Falha ao abrir o arquivo para leitura!");
+      switchToRFID();
       return "";
     }
 
@@ -117,6 +136,7 @@ public:
       log += (char)logFile.read();
     }
     logFile.close();  // Fecha o arquivo
+    switchToRFID();
     return log;
   }
 };
@@ -125,41 +145,54 @@ public:
 // ---------- Funções ---------------- //
 // Função para gerar a data e hora a partir de uma requisição HTTP
 String getCurrentDateTime() {
-  // URL para pegar a data e hora de São Paulo (fuso horário: America/Sao_Paulo)
-  String url = "http://worldtimeapi.org/api/timezone/America/Sao_Paulo";
-
-  // Realiza a requisição HTTP
-  HTTPClient http;
-  http.begin(url);
-  int httpResponseCode = http.GET();
-
-  String formattedTime = "Erro ao obter hora";  // Valor padrão caso a requisição falhe
-
-  if (httpResponseCode == 200) {        // Se a resposta for bem-sucedida
-    String payload = http.getString();  // Pega o corpo da resposta
-
-    // Parseia o JSON retornado
-    StaticJsonDocument<512> doc;
-    deserializeJson(doc, payload);
-
-    // Extrai as informações de data e hora
-    String dateTime = doc["datetime"];  // Exemplo: "2025-01-07T10:45:32.123456-03:00"
-
-    // Extrai a parte da data (YYYY-MM-DD) e da hora (HH:MM:SS)
-    String date = dateTime.substring(0, 10);   // "2025-01-07"
-    String time = dateTime.substring(11, 19);  // "10:45:32"
-
-    // Formata a data para o formato DIA/MES/ANO
-    String day = date.substring(8, 10);   // "07"
-    String month = date.substring(5, 7);  // "01"
-    String year = date.substring(0, 4);   // "2025"
-
-    // Concatena para a string final
-    formattedTime = day + "/" + month + "/" + year + " " + time;
+  // Verifica a conexão Wi-Fi
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Erro: ESP32 não está conectado à Internet!");
+    return "Sem conexão";
   }
 
-  http.end();            // Finaliza a requisição HTTP
-  return formattedTime;  // Retorna a data e hora formatada
+  // URL para pegar a data e hora de São Paulo
+  String url = "http://worldtimeapi.org/api/timezone/America/Sao_Paulo";
+
+  HTTPClient http;
+  http.begin(url);
+
+  int httpResponseCode = http.GET();
+  String formattedTime = "Erro ao obter hora";
+
+  if (httpResponseCode == 200) {  // Se a resposta for bem-sucedida
+    String payload = http.getString();
+    Serial.println("Resposta do servidor:");
+    Serial.println(payload);
+
+    // Parseia o JSON retornado
+    StaticJsonDocument<1024> doc;  // Aumente o tamanho se necessário
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (error) {
+      Serial.print("Erro ao parsear JSON: ");
+      Serial.println(error.c_str());
+      return "Erro no JSON";
+    }
+
+    // Extrai informações de data e hora
+    String dateTime = doc["datetime"];  // Exemplo: "2025-01-07T10:45:32.123456-03:00"
+    String date = dateTime.substring(0, 10);   // "2025-01-07"
+    String time = dateTime.substring(11, 19); // "10:45:32"
+
+    // Formata a data para DIA/MES/ANO
+    String day = date.substring(8, 10);   
+    String month = date.substring(5, 7);
+    String year = date.substring(0, 4);
+
+    formattedTime = day + "/" + month + "/" + year + " " + time;
+  } else {
+    Serial.print("Erro na requisição HTTP. Código: ");
+    Serial.println(httpResponseCode);
+  }
+
+  http.end();  // Finaliza a requisição HTTP
+  return formattedTime;
 }
 
 // Função para criar e registrar um log
@@ -168,53 +201,87 @@ void createLogger(String login, String method, String additionalInfo) {
   Log log(getCurrentDateTime(), login, method, additionalInfo);
 
   // Salvar o log no SD
-  //log.saveToSD();  // Grava no SD Card
+  if (isCardInit) {
+    log.saveToSD();  // Grava no SD Card
+  }
 }
+
+void switchToRFID() {
+  SPI.end();
+  digitalWrite(SD_CS_PIN, HIGH);  // Desativa o SD Card
+  digitalWrite(RFID_CS_PIN, LOW); // Ativa o RFID
+  delay(50);  // Adiciona um pequeno delay
+  Serial.println("Serial em SD");
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
+}
+
+void switchToSD() {
+  SPI.end();
+  digitalWrite(RFID_CS_PIN, HIGH); // Desativa o RFID
+  digitalWrite(SD_CS_PIN, LOW);    // Ativa o SD Card
+  delay(50);  // Adiciona um pequeno delay
+  Serial.println("Serial em SD");
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
+}
+
 
 // Função para inicializar o SD
 bool initializeSD() {
+  SPI.end();  // Finaliza o SPI para liberar o barramento
   if (!SD.begin(SD_CS_PIN)) {
     Serial.println("Falha ao inicializar o cartão SD.");
     return false;
   }
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);  // Reabre o SPI após o SD Card ser inicializado
   return true;
 }
 
 void printSDLogs() {
+  switchToSD();
   String logs = Log::readFromSD();
   if (logs.length() > 0) {
     Serial.println(logs);
   } else {
     Serial.println("Nenhum log encontrado.");
   }
+  switchToRFID();
 }
 
 void carregarRegistros() {
+  switchToSD();
   if (!SD.exists(FILENAME)) {
     Serial.println("Arquivo de registros não encontrado, criando novo...");
     File file = SD.open(FILENAME, FILE_WRITE);
     if (file) {
-      file.println("[]"); // Arquivo começa vazio como um array JSON
+      file.println("[]");  // Arquivo começa vazio como um array JSON
       file.close();
     } else {
       Serial.println("Falha ao criar o arquivo de registros!");
     }
+    switchToRFID();
     return;
   }
 
+  switchToRFID();
   Serial.println("Registros carregados com sucesso!");
 }
 
 void salvarRegistros(JsonArray registros) {
-  File file = SD.open(FILENAME, FILE_WRITE);
-  if (file) {
-    file.seek(0); // Certifique-se de sobrescrever o arquivo
-    serializeJson(registros, file);
-    file.close();
-    Serial.println("Registros salvos com sucesso!");
-  } else {
-    Serial.println("Erro ao abrir o arquivo para salvar!");
-  }
+  if (isCardInit) {
+    //Seleciona o SD Pelo Barramento SPI
+    switchToSD();
+    Serial.println("SD Ativado");
+    File file = SD.open(FILENAME, FILE_APPEND);
+    if (file) {
+      file.seek(0);  // Certificar de sobrescrever o arquivo
+      serializeJson(registros, file);
+      file.close();
+      Serial.println("Registros salvos com sucesso!");
+    } else {
+      Serial.println("Erro ao abrir o arquivo para salvar!");
+    }
+    switchToRFID();
+  } else Serial.println("Cartão SD Não Inicializado");
 }
 
 void setupWiFi() {
@@ -232,87 +299,74 @@ void setupMQTT() {
   mqttClient.setCallback(mqttCallback);
 }
 
-void openInternalDoor();
-void closeInternalDoor();
-void openExternalDoor();
-void closeExternalDoor();
+
 
 // Função para processar mensagem de registro
 void processarMensagemRegistro(String payload) {
+  // Ativar depuração se necessário
+  bool debug = true;
+  if (debug) {
+    Serial.println("Payload recebido:");
+    Serial.println(payload);
+  }
+
+  // Parsear o JSON do payload
   StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, payload);
 
   if (error) {
-    Serial.println("Erro ao parsear JSON!");
+    Serial.print("Erro ao parsear JSON: ");
+    Serial.println(error.c_str());
     return;
   }
 
-  String metodo = doc["metodo"]; // APAGAR, ATUALIZAR, INSERIR
-  String uid = doc["uid"];
-  String nome = doc["nome"];
-  String addInfo = doc["addInfo"];
+  // Extrair campos do JSON
+  String uid = doc["id"] | "";  // UID do cartão RFID
+  String nome = doc["name"] | "";  // Nome do dono
+  String addInfo = doc["description"] | "";  // Informação adicional
 
+  // Verificar se todos os campos estão preenchidos
+  if (uid.isEmpty() || nome.isEmpty() || addInfo.isEmpty()) {
+    Serial.println("Erro: JSON incompleto. Certifique-se de que 'id', 'name' e 'description' estão presentes.");
+    return;
+  }
+
+  // Selecionar o SD pelo barramento SPI
+  switchToSD();
+
+  // Abrir o arquivo para leitura
   File file = SD.open(FILENAME, FILE_READ);
-  if (!file) {
-    Serial.println("Erro ao abrir arquivo para leitura!");
-    return;
-  }
-
   StaticJsonDocument<2048> registrosDoc;
-  DeserializationError loadError = deserializeJson(registrosDoc, file);
-  file.close();
 
-  if (loadError) {
-    Serial.println("Erro ao carregar registros!");
-    return;
-  }
-
-  JsonArray registros = registrosDoc.as<JsonArray>();
-
-  if (metodo == "APAGAR") {
-    // Apagar registro por UID
-    bool apagado = false;
-    for (JsonArray::iterator it = registros.begin(); it != registros.end(); ++it) {
-      if ((*it)["uid"] == uid) {
-        registros.remove(it);
-        apagado = true;
-        break;
-      }
-    }
-    if (apagado) {
-      Serial.println("Registro apagado com sucesso!");
-      salvarRegistros(registros);
-    } else {
-      Serial.println("UID não encontrado!");
-    }
-  } else if (metodo == "ATUALIZAR") {
-    // Atualizar registro por UID
-    bool atualizado = false;
-    for (JsonObject registro : registros) {
-      if (registro["uid"] == uid) {
-        registro["nome"] = nome;
-        registro["addInfo"] = addInfo;
-        atualizado = true;
-        break;
-      }
-    }
-    if (atualizado) {
-      Serial.println("Registro atualizado com sucesso!");
-      salvarRegistros(registros);
-    } else {
-      Serial.println("UID não encontrado para atualização!");
-    }
-  } else if (metodo == "INSERIR") {
-    // Inserir novo registro
-    JsonObject novoRegistro = registros.createNestedObject();
-    novoRegistro["uid"] = uid;
-    novoRegistro["nome"] = nome;
-    novoRegistro["addInfo"] = addInfo;
-    salvarRegistros(registros);
-    Serial.println("Registro inserido com sucesso!");
+  if (!file) {
+    Serial.println("Arquivo não encontrado. Criando novo...");
+    registrosDoc.to<JsonArray>(); // Criar array vazio
   } else {
-    Serial.println("Método desconhecido!");
+    // Carregar registros existentes
+    DeserializationError loadError = deserializeJson(registrosDoc, file);
+    file.close();
+
+    if (loadError) {
+      Serial.print("Erro ao carregar registros: ");
+      Serial.println(loadError.c_str());
+      return;
+    }
   }
+
+  JsonArray registros = registrosDoc.to<JsonArray>();
+
+  // Inserir novo registro
+  JsonObject novoRegistro = registros.createNestedObject();
+  novoRegistro["uid"] = uid;
+  novoRegistro["nome"] = nome;
+  novoRegistro["addInfo"] = addInfo;
+
+  // Salvar registros atualizados
+  salvarRegistros(registros);
+  Serial.println("Registro inserido com sucesso!");
+
+  // Voltar para o modo RFID
+  switchToRFID();
 }
 
 
@@ -323,7 +377,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     msg += (char)payload[i];
   }
 
-  if(debug){
+  if (debug) {
     Serial.print("Tópico: ");
     Serial.println(topic);
     Serial.print("Mensagem: ");
@@ -334,15 +388,19 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   if (String(topic) == "home/doors/openIN" && msg == "1") {
     // Abrir a porta interna via MQTT
     openInternalDoor();
+    createLogger("MQTT", "MQTT", "Porta Interna Aberta Via MQTT");
   } else if (String(topic) == "home/doors/openOUT" && msg == "1") {
     // Abrir a porta externa via MQTT
     openExternalDoor();
+    createLogger("MQTT", "MQTT", "Porta Externa Aberta Via MQTT");
   } else if (String(topic) == "home/doors/closeIN" && msg == "1") {
     // Fechar a porta interna via MQTT
     closeInternalDoor();
+    createLogger("MQTT", "MQTT", "Porta Interna Fechada Via MQTT");
   } else if (String(topic) == "home/doors/closeOUT" && msg == "1") {
     // Fechar a porta externa via MQTT
     closeExternalDoor();
+    createLogger("MQTT", "MQTT", "Porta Externa Fechada Via MQTT");
   } else if (String(topic) == "home/doors/registerTag" && msg == "1") {
     // Ativar o modo de cadastro de tag
     isTagRegistrationMode = true;
@@ -355,16 +413,8 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     if (debug) {
       Serial.println("Modo de cadastro de tag desativado.");
     }
-  } else if (String(topic) == "home/doors/Registro") { // METODO(APAGAR,ATUALIZAR,INSERIR) //UID //NOME //ADDINFO
+  } else if (String(topic) == "home/doors/Registro") {
     processarMensagemRegistro(msg);
-    /* EXEMPLO DE MENSAGEM de Registro:
-    *
-    *   {
-    *   "metodo": "INSERIR",
-    *   "uid": "12345678",
-    *   "nome": "Joao",
-    *   "addInfo": "Acesso Principal"
-    *}                                  */
   }
 }
 
@@ -388,12 +438,18 @@ void reconnectMQTT() {
 
 // Funções do RFID
 void initRFID() {
-  SPI.begin();  // Inicia o barramento SPI
-  mfrc522.PCD_Init();
+  SPI.end();  // Desliga SPI antes de inicializar o RFID
+  mfrc522.PCD_Init();  // Inicializa o RFID
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);  // Reabre o SPI após o RFID ser inicializado
   Serial.println("Leitor RFID pronto.");
 }
 
+
 bool readRFID() {
+
+  //Seleciona o RFID Pelo Barramento SPI
+  //selectRFID();
+
   // Verifica se há uma nova tag presente
   if (!mfrc522.PICC_IsNewCardPresent()) {
     return false;
@@ -401,8 +457,10 @@ bool readRFID() {
 
   // Select one of the cards.
   if (!mfrc522.PICC_ReadCardSerial()) {
+    Serial.println("Erro ao ler o cartão");
     return false;
   }
+
 
   // Exibe o UID no monitor serial e salva em currentTag
   currentTag = "";
@@ -421,7 +479,7 @@ bool readRFID() {
 
   // Emite o som no buzzer
   digitalWrite(BUZZER_PIN, HIGH);  // Liga o buzzer
-  delay(100);                      // Tempo do buzzer ligado (100ms)
+  delay(1000);                     // Tempo do buzzer ligado (100ms)
   digitalWrite(BUZZER_PIN, LOW);   // Desliga o buzzer
 
   // Finaliza a comunicação com a tag
@@ -430,51 +488,81 @@ bool readRFID() {
   return true;  // Leitura bem-sucedida
 }
 
-bool isRFIDValid(){
-  for (byte i = 0; i < 10; i++) {
-    if (uids[i] == currentTag) {  // Se encontrar um UID igual, retorna true
+// Função para verificar se o RFID é válido
+bool isRFIDValid() {
+  /*
+  // Abrir o arquivo contendo os UIDs válidos
+  File validUIDsFile = SD.open(FILENAME, FILE_READ);
+
+  // Verificar se o arquivo foi aberto corretamente
+  if (!validUIDsFile) {
+    Serial.println("Falha ao abrir o arquivo para leitura");
+    return false;
+  }
+
+  // Ler apenas os UIDs do arquivo
+  StaticJsonDocument<1024> doc;
+  DeserializationError error = deserializeJson(doc, validUIDsFile);
+  validUIDsFile.close();
+
+  if (error) {
+    Serial.print("Erro ao carregar UIDs válidos: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  JsonArray uids = doc.as<JsonArray>();
+  for (JsonVariant uid : uids) {
+    Serial.print("UID registrado: ");
+    Serial.println(uid.as<String>());
+    if (uid.as<String>() == currentTag) {
+      Serial.println("UID válido encontrado!");
       return true;
     }
   }
+
+  Serial.println("UID não encontrado nos registros válidos.");
+  return false;
+  */
+  
+    if (currentTag == "b3019d2f" || currentTag == "a32a9013") {  // Se encontrar um UID igual, retorna true
+      return true;
+    }
+  
   // Se não encontrar nenhum UID igual, retorna false
   return false;
 }
 
 
-// Define as Funções
-void Lights();
-void Doors();
 
 void setup() {
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
   // Variavel de TESTE
-  uids[0] = ("a32a9013");
-  uids[1] = ("a32a9013");
-  uids[2] = ("a32a9013");
-  uids[3] = ("a32a9013");
-  uids[4] = ("a32a9013");
-  uids[5] = ("a32a9013");
-  uids[6] = ("a32a9013");
-  uids[7] = ("a32a9013");
-  uids[8] = ("a32a9013");
-  uids[9] = ("a32a9013");
+  uids = ("a32a9013");
+
 
   // Inicializa o Serial
   Serial.begin(115200);
+  Serial.println("\n Inicializando... \n");
+
+  initRFID();
 
   // Inicializa o SD Card
   if (!initializeSD()) {
-    //    return;
+    isCardInit = false;
+  } else {
+    Serial.println("SD Card inicializado.");
+    isCardInit = true;
   }
-  Serial.println("SD Card inicializado.");
 
-  //carregarRegistros();
+  if (isCardInit) {
+    carregarRegistros();
+  } else {
+    Serial.println("Registros Não Carregados! SD Card Não Inicializado");
+  }
 
   setupWiFi();
 
-  // Inicializa outros dispositivos (RFID, Servo, etc.)
-  initRFID();
-
-  // Inicializa outros componentes, como os servos
   servoIN.attach(SERVO_PIN_1);
   servoOUT.attach(SERVO_PIN_2);
   Serial.println("Servos Conectados");
@@ -494,6 +582,13 @@ void setup() {
   pinMode(ECHO_PIN, INPUT);
   pinMode(TRIGGER_PIN, OUTPUT);
 
+  pinMode(RFID_CS_PIN, OUTPUT);  // Define o pino CS do RFID como saída
+  pinMode(SD_CS_PIN, OUTPUT);    // Define o pino CS do SD Card como saída
+
+  // Garantir que ambos os dispositivos SPI estão desativados inicialmente
+  digitalWrite(RFID_CS_PIN, HIGH);  // Desativa o RFID (CS em HIGH)
+  digitalWrite(SD_CS_PIN, HIGH);    // Desativa o SD Card (CS em HIGH)
+
 
   digitalWrite(BUZZER_PIN, LOW);  // Buzzer off
   digitalWrite(LED_PIN, LOW);     // LED off
@@ -509,18 +604,15 @@ void setup() {
 
   Serial.println("Iniciado com Sucesso");
   // Cria as tasks
-  //xTaskCreate(Lights, "LightsTask", 4096, NULL, 1, NULL);
+  xTaskCreate(Lights, "LightsTask", 4096, NULL, 1, NULL);
   xTaskCreate(Doors, "DoorsTask", 4096, NULL, 1, NULL);
 
   mqttClient.loop();
-
+  Serial.println("Inicialização Concluida!");
 
   //TESTE
-    Serial.print("UID ");
-    Serial.print(1);  // Para mostrar o número do UID
-    Serial.print(": ");
-    Serial.println(uids[0]);  // Imprime o UID
-
+  //Serial.print(getCurrentDateTime());
+  //createLogger("TESTE1","TESTE2","TESTE3");
 }
 
 void Lights(void *parameter) {
@@ -558,7 +650,7 @@ void Lights(void *parameter) {
       digitalWrite(LED_PIN, LOW);  // Apaga o LED
       // Verifica se já passou tempo suficiente para registrar o log
       if (millis() - luzUltimoLog > 5000) {  // Garante que o log só será registrado a cada 5 segundos
-        createLogger("Sensor de Presença", "Sensor de Presença", "Luz Apagada");
+        //createLogger("Sensor de Presença", "Sensor de Presença", "Luz Apagada");
         luzUltimoLog = millis();  // Atualiza o tempo do último log
       }
     }
@@ -589,7 +681,7 @@ void Doors(void *parameter) {
 
     //Mantem a conexão MQTT
     if (!mqttClient.connected()) {
-    reconnectMQTT();  // Garantir reconexão com o MQTT se desconectado
+      reconnectMQTT();  // Garantir reconexão com o MQTT se desconectado
     }
     mqttClient.loop();
 
@@ -603,22 +695,20 @@ void Doors(void *parameter) {
 
     // Verifica a Tag
     if (readRFID() && !isTagRegistrationMode) {
-      if(isRFIDValid()){
-      handleTagPress(currentMillis, lastPressOUT, isExtLast, isServoOpenIN, servoIN, servoCloseTimeIN, isServoOpenOUT, servoOUT, servoCloseTimeOUT, debug);
-      } else if (isTagRegistrationMode) {
-        //Enviar tag por lida via mqtt
-        if(!isRFIDValid()){
-          if(debug) Serial.println("Tag Enviada para Cadastro:" + currentTag);
-          mqttClient.publish("home/doors/RFID", currentTag.c_str());
-        }
+      if (isRFIDValid()) {
+        handleTagPress(currentMillis, lastPressOUT, isExtLast, isServoOpenIN, servoIN, servoCloseTimeIN, isServoOpenOUT, servoOUT, servoCloseTimeOUT, debug);
       }
+    } else if (readRFID() && isTagRegistrationMode) {
+      if (debug) Serial.println("Tag Enviada para Cadastro:" + currentTag);
+      mqttClient.publish("home/doors/RFID", currentTag.c_str());
     }
-
     //Manda uma resposta se trocar de modo:
-    if(isTagRegistrationMode != inRegisterMode){
+    if (isTagRegistrationMode != inRegisterMode) {
       inRegisterMode = isTagRegistrationMode;
       mqttClient.publish("home/doors/inRegMode", inRegisterMode ? "true" : "false");
     }
+
+    //Serial.println(mfrc522.PCD_PerformSelfTest());
 
     vTaskDelay(50 / portTICK_PERIOD_MS);  // Aguarda 50ms antes de verificar novamente
   }
@@ -643,6 +733,7 @@ void handleButtonPress(int buttonPin, unsigned long &lastPress, unsigned long cu
     if (debug) {
       String portType = isInternal ? "interna" : "externa";
       Serial.println("Porta " + portType + " aberta.");
+      createLogger("Botão", "Botão", "Porta Aberta");
     }
   }
 }
@@ -654,26 +745,28 @@ void autoClosePort(bool &isServoOpen, unsigned long currentMillis, unsigned long
     if (debug) {
       Serial.println(message);
     }
-    
+
   }
 }
 
 void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, bool &isExtLast, bool &isServoOpenIN, Servo &servoIN, unsigned long &servoCloseTimeIN, bool &isServoOpenOUT, Servo &servoOUT, unsigned long &servoCloseTimeOUT, bool debug) {
 
-  if(!isTagRegistrationMode){
+  if (!isTagRegistrationMode) {
     // Abre a porta oposta à última aberta
     if (isExtLast) {
       servoOUT.write(90);
       isServoOpenOUT = true;
       servoCloseTimeOUT = currentMillis + tempo;  // Define o tempo para fechar a porta
       mqttClient.publish("home/doors/statusOUT", "Aberta");
+      createLogger("TAG", "TAG", "Aberto Via TAG");
       if (debug) {
         Serial.println("Porta externa aberta. TAG");
       }
-      delay(servoCloseTimeOUT);
-      mqttClient.publish("home/doors/statusOUT", "Fechada");
-      if (debug) {
-        Serial.println("Porta externa fechada. TAG");
+      if (isServoOpenOUT && currentMillis > servoCloseTimeOUT) {
+        mqttClient.publish("home/doors/statusOUT", "Fechada");
+        if (debug) {
+          Serial.println("Porta externa fechada. TAG");
+        }
       }
     } else {
       servoIN.write(90);
@@ -683,10 +776,11 @@ void handleTagPress(unsigned long currentMillis, unsigned long &lastPressOUT, bo
       if (debug) {
         Serial.println("Porta interna aberta. TAG");
       }
-      delay(servoCloseTimeIN);
-      mqttClient.publish("home/doors/statusIN", "Fechada");
-      if (debug) {
-        Serial.println("Porta interna fechada. TAG");
+      if (isServoOpenIN && currentMillis > servoCloseTimeIN) {
+        mqttClient.publish("home/doors/statusIN", "Fechada");
+        if (debug) {
+          Serial.println("Porta interna fechada. TAG");
+        }
       }
     }
     isExtLast = !isExtLast;
@@ -731,18 +825,3 @@ void closeExternalDoor() {
 void loop() {
   //LOOP VAZIO :)
 }
-
-
-/*     Lista de Tópicos home/doors/:
-* openIN		: APP manda abrir a porta IN
-* openOUT		: APP manda abrir a porta OUT
-* closeIN		: APP manda fechar a porta IN
-* closeOUT	: APP manda fechar a porta OUT
-* registerTag	: APP manda entrar no modo de registro
-* stopRegisterTag	: APP manda sair do modo de registro
-* Registro	: APP Manda o registro da tag para ser adicionado
-* RFID		: ESP32 Manda a uid para ser registrada no APP
-* inRegMode	: ESP32 Manda o se está em modo de registro (1 Para sim, 0 para não)
-* statusOUT	: ESP32 Manda para o APP o estado da porta OUT (1 para aberta, 0 para fechada)
-* statusIN	: ESP32 Manda para o APP o estado da porta IN (1 para aberta, 0 para fechada)
-*/
